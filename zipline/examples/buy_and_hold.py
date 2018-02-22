@@ -18,6 +18,7 @@ from zipline.finance import commission, slippage
 
 stocks = ['AAPL', 'MSFT']
 
+print('buy and hold')
 
 def initialize(context):
     context.has_ordered = False
