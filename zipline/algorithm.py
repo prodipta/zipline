@@ -81,7 +81,7 @@ from zipline.finance.execution import (
 )
 from zipline.finance.performance import PerformanceTracker
 from zipline.finance.asset_restrictions import Restrictions
-from zipline.finance.cancel_policy import NeverCancel, CancelPolicy
+from zipline.finance.cancel_policy import CancelPolicy, EODCancel
 from zipline.finance.asset_restrictions import (
     NoRestrictions,
     StaticRestrictions,
@@ -251,6 +251,7 @@ class TradingAlgorithm(object):
                 Any asset identifiers that are not provided in the
                 equities_metadata, but will be traded by this TradingAlgorithm
         """
+        print('creating new algo object')
         self.sources = []
 
         # List of trading controls to be used to validate orders.
@@ -317,7 +318,7 @@ class TradingAlgorithm(object):
         )
 
         self.blotter = kwargs.pop('blotter', None)
-        self.cancel_policy = kwargs.pop('cancel_policy', NeverCancel())
+        self.cancel_policy = kwargs.pop('cancel_policy', EODCancel())
         if not self.blotter:
             self.blotter = Blotter(
                 data_frequency=self.data_frequency,

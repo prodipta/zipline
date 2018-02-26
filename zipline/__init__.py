@@ -29,7 +29,7 @@ from ._version import get_versions
 from . algorithm import TradingAlgorithm
 from . import api
 
-
+print('running local zipline')
 # PERF: Fire a warning if calendars were instantiated during zipline import.
 # Having calendars doesn't break anything per-se, but it makes zipline imports
 # noticeably slower, which becomes particularly noticeable in the Zipline CLI.

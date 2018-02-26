@@ -795,6 +795,7 @@ class BcolzMinuteBarWriter(object):
         num_rec_mins = table.size
 
         all_minutes = self._minute_index
+        
         # Get the latest minute we wish to write to the ctable
         last_minute_to_write = pd.Timestamp(dts[-1], tz='UTC')
 
