@@ -893,7 +893,7 @@ class Factor(RestrictedDTypeMixin, ComputableTerm):
         --------
         .. code-block:: python
 
-            price = USEquityPricing.close.latest
+            price = EquityPricing.close.latest
             columns={
                 'PRICE': price,
                 'WINSOR_1: price.winsorize(
@@ -1416,7 +1416,7 @@ class CustomFactor(PositiveWindowLengthMixin, CustomTermMixin, Factor):
     Parameters
     ----------
     inputs : iterable, optional
-        An iterable of `BoundColumn` instances (e.g. USEquityPricing.close),
+        An iterable of `BoundColumn` instances (e.g. EquityPricing.close),
         describing the data to load and pass to `self.compute`.  If this
         argument is not passed to the CustomFactor constructor, we look for a
         class-level attribute named `inputs`.
@@ -1488,7 +1488,7 @@ class CustomFactor(PositiveWindowLengthMixin, CustomTermMixin, Factor):
             10.
             """
 
-            inputs = [USEquityPricing.high, USEquityPricing.low]
+            inputs = [EquityPricing.high, EquityPricing.low]
             window_length = 10
 
             def compute(self, today, assets, out, highs, lows):
@@ -1522,15 +1522,15 @@ class CustomFactor(PositiveWindowLengthMixin, CustomTermMixin, Factor):
 
         # Values for `inputs` and `window_length` must be passed explicitly to
         # MedianValue.
-        median_close10 = MedianValue([USEquityPricing.close], window_length=10)
-        median_low15 = MedianValue([USEquityPricing.low], window_length=15)
+        median_close10 = MedianValue([EquityPricing.close], window_length=10)
+        median_low15 = MedianValue([EquityPricing.low], window_length=15)
 
     A CustomFactor with multiple outputs:
 
     .. code-block:: python
 
         class MultipleOutputs(CustomFactor):
-            inputs = [USEquityPricing.close]
+            inputs = [EquityPricing.close]
             outputs = ['alpha', 'beta']
             window_length = N
 

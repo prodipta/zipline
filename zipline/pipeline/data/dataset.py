@@ -106,7 +106,7 @@ class BoundColumn(LoadableTerm):
     A column of data that's been concretely bound to a particular dataset.
 
     Instances of this class are dynamically created upon access to attributes
-    of DataSets (for example, USEquityPricing.close is an instance of this
+    of DataSets (for example, EquityPricing.close is an instance of this
     class).
 
     Attributes

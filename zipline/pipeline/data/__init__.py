@@ -1,4 +1,4 @@
-from .equity_pricing import USEquityPricing
+from .equity_pricing import USEquityPricing, EquityPricing
 from .dataset import DataSet, Column, BoundColumn
 
 __all__ = [

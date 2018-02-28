@@ -44,7 +44,7 @@ from zipline.finance.blotter import Blotter
 from zipline.finance.trading import TradingEnvironment
 from zipline.finance.order import ORDER_STATUS
 from zipline.lib.labelarray import LabelArray
-from zipline.pipeline.data import USEquityPricing
+from zipline.pipeline.data import USEquityPricing, EquityPricing
 from zipline.pipeline.engine import SimplePipelineEngine
 from zipline.pipeline.factors import CustomFactor
 from zipline.pipeline.loaders.testing import make_seeded_random_loader

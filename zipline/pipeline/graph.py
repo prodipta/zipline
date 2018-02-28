@@ -140,6 +140,7 @@ class TermGraph(object):
         at the end of execution.
         """
         refcounts = self.graph.out_degree()
+        refcounts = dict(refcounts)
         for t in self.outputs.values():
             refcounts[t] += 1
 
@@ -302,31 +303,31 @@ class ExecutionPlan(TermGraph):
         Case 1
         ~~~~~~
 
-        Factor A needs 5 extra rows of USEquityPricing.close, and Factor B
+        Factor A needs 5 extra rows of EquityPricing.close, and Factor B
         needs 3 extra rows of the same.  Factor A also requires 5 extra rows of
-        USEquityPricing.high, which no other Factor uses.  We don't require any
+        EquityPricing.high, which no other Factor uses.  We don't require any
         extra rows of Factor A or Factor B
 
         We load 5 extra rows of both `price` and `high` to ensure we can
         service Factor A, and the following offsets get computed::
 
-            offset[Factor A, USEquityPricing.close] == (5 - 0) - 5 == 0
-            offset[Factor A, USEquityPricing.high]  == (5 - 0) - 5 == 0
-            offset[Factor B, USEquityPricing.close] == (5 - 0) - 3 == 2
-            offset[Factor B, USEquityPricing.high] raises KeyError.
+            offset[Factor A, EquityPricing.close] == (5 - 0) - 5 == 0
+            offset[Factor A, EquityPricing.high]  == (5 - 0) - 5 == 0
+            offset[Factor B, EquityPricing.close] == (5 - 0) - 3 == 2
+            offset[Factor B, EquityPricing.high] raises KeyError.
 
         Case 2
         ~~~~~~
 
-        Factor A needs 5 extra rows of USEquityPricing.close, and Factor B
+        Factor A needs 5 extra rows of EquityPricing.close, and Factor B
         needs 3 extra rows of Factor A, and Factor B needs 2 extra rows of
-        USEquityPricing.close.
+        EquityPricing.close.
 
-        We load 8 extra rows of USEquityPricing.close (enough to load 5 extra
+        We load 8 extra rows of EquityPricing.close (enough to load 5 extra
         rows of Factor A), and the following offsets get computed::
 
-            offset[Factor A, USEquityPricing.close] == (8 - 3) - 5 == 0
-            offset[Factor B, USEquityPricing.close] == (8 - 0) - 2 == 6
+            offset[Factor A, EquityPricing.close] == (8 - 3) - 5 == 0
+            offset[Factor B, EquityPricing.close] == (8 - 0) - 2 == 6
             offset[Factor B, Factor A]              == (3 - 0) - 3 == 0
 
         Notes
@@ -372,9 +373,9 @@ class ExecutionPlan(TermGraph):
         --------
         Our graph contains the following terms:
 
-            A = SimpleMovingAverage([USEquityPricing.high], window_length=5)
-            B = SimpleMovingAverage([USEquityPricing.high], window_length=10)
-            C = SimpleMovingAverage([USEquityPricing.low], window_length=8)
+            A = SimpleMovingAverage([EquityPricing.high], window_length=5)
+            B = SimpleMovingAverage([EquityPricing.high], window_length=10)
+            C = SimpleMovingAverage([EquityPricing.low], window_length=8)
 
         To compute N rows of A, we need N + 4 extra rows of `high`.
         To compute N rows of B, we need N + 9 extra rows of `high`.

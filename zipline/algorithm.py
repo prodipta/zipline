@@ -721,6 +721,8 @@ class TradingAlgorithm(object):
             perfs = []
             for perf in self.get_generator():
                 perfs.append(perf)
+                if 'daily_perf' in perf:
+                    print('Date: {}, Portfolio Value: {}'.format(perf['daily_perf']['period_close'],perf['daily_perf']['portfolio_value']))
 
             # convert perf dict to pandas dataframe
             daily_stats = self._create_daily_stats(perfs)

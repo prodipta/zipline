@@ -31,7 +31,7 @@ UINT32_MAX = iinfo(uint32).max
 
 class USEquityPricingLoader(PipelineLoader):
     """
-    PipelineLoader for US Equity Pricing data
+    PipelineLoader for Equity Pricing data
 
     Delegates loading of baselines and adjustments.
     """

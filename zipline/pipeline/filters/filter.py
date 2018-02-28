@@ -387,7 +387,7 @@ class CustomFilter(PositiveWindowLengthMixin, CustomTermMixin, Filter):
     Parameters
     ----------
     inputs : iterable, optional
-        An iterable of `BoundColumn` instances (e.g. USEquityPricing.close),
+        An iterable of `BoundColumn` instances (e.g. EquityPricing.close),
         describing the data to load and pass to `self.compute`.  If this
         argument is passed to the CustomFilter constructor, we look for a
         class-level attribute named `inputs`.

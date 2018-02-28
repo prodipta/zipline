@@ -50,7 +50,7 @@ import zipline
 from zipline.assets import Equity, Future
 from zipline.finance.asset_restrictions import NoRestrictions
 from zipline.pipeline import SimplePipelineEngine
-from zipline.pipeline.data import USEquityPricing
+from zipline.pipeline.data import USEquityPricing, EquityPricing
 from zipline.pipeline.loaders import USEquityPricingLoader
 from zipline.pipeline.loaders.testing import make_seeded_random_loader
 from zipline.protocol import BarData
@@ -1531,7 +1531,7 @@ class WithEquityPricingPipelineEngine(WithAdjustmentReader,
         )
 
         def get_loader(column):
-            if column in USEquityPricing.columns:
+            if column in EquityPricing.columns:
                 return loader
             else:
                 raise AssertionError("No loader registered for %s" % column)
