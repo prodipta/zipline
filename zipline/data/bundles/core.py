@@ -498,7 +498,7 @@ def _make_bundle_core():
                 ),
             )
 
-    def load(name, environ=os.environ, timestamp=None):
+    def load(name, environ=os.environ, timestamp=None, path=None):
         """Loads a previously ingested bundle.
 
         Parameters
@@ -516,6 +516,21 @@ def _make_bundle_core():
         bundle_data : BundleData
             The raw data readers for this bundle.
         """
+        if path is not None:
+            return BundleData(
+                    asset_finder=AssetFinder(
+                        os.path.join(path,"assets-6.sqlite"),
+                    ),
+                    equity_minute_bar_reader=BcolzMinuteBarReader(
+                        os.path.join(path,"minute")
+                    ),
+                    equity_daily_bar_reader=BcolzDailyBarReader(
+                        os.path.join(path,"daily")
+                    ),
+                    adjustment_reader=SQLiteAdjustmentReader(
+                        os.path.join(path,"adjustments.sqlite")
+                    ),
+            )
         if timestamp is None:
             timestamp = pd.Timestamp.utcnow()
         timestr = most_recent_data(name, timestamp, environ=environ)

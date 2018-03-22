@@ -22,6 +22,7 @@ from .calendar_utils import (
     register_calendar_alias,
     register_calendar_type,
 )
+from .exchange_calendar_from_date import ExchangeCalendarFromDate
 
 __all__ = [
     'clear_calendars',
@@ -31,4 +32,5 @@ __all__ = [
     'register_calendar_alias',
     'register_calendar_type',
     'TradingCalendar',
+    'ExchangeCalendarFromDate',
 ]

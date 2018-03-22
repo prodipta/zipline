@@ -13,6 +13,7 @@ from zipline.utils.calendars.exchange_calendar_tsx import TSXExchangeCalendar
 from zipline.utils.calendars.us_futures_calendar import (
     QuantopianUSFuturesCalendar,
 )
+from zipline.utils.calendars.exchange_calendar_from_date import ExchangeCalendarFromDate
 
 _default_calendar_factories = {
     'NYSE': NYSEExchangeCalendar,
