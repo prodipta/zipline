@@ -7,13 +7,14 @@ from os import listdir
 from os.path import isfile, join
 import sqlalchemy as sa
 import pandas as pd
+from datetime import datetime
 
 from logbook import Logger, StreamHandler
 #from numpy import empty
 from pandas import DataFrame, read_csv, Index, Timedelta, NaT
 #from contextlib2 import ExitStack
 
-from zipline.utils.calendars import register_calendar_alias, deregister_calendar, get_calendar, register_calendar
+from zipline.utils.calendars import deregister_calendar, get_calendar, register_calendar
 from zipline.utils.cli import maybe_show_progress
 from zipline.utils.calendars import ExchangeCalendarFromDate
 from zipline.data.minute_bars import BcolzMinuteBarWriter
@@ -30,10 +31,12 @@ logger.handlers.append(handler)
 GDFL_DATA_PATH = "C:/Users/academy.academy-72/Desktop/dev platform/data/GDFL/current/inputs"
 GDFL_META_PATH = "C:/Users/academy.academy-72/Desktop/dev platform/data/GDFL/meta"
 GDFL_BUNDLE_PATH = "C:/Users/academy.academy-72/Desktop/dev platform/data/GDFL/bundle"
+GDFL_DAILY_PATH = "C:/Users/academy.academy-72/Desktop/dev platform/data/GDFL/current/symbols/daily"
 ASSET_DB = "assets-6.sqlite"
 ADJUSTMENT_DB = "adjustments.sqlite"
 META_DATA = "assets.csv"
 GDFL_BIZDAYLIST = "bizdays.csv"
+GDFL_SYMLIST = "symbols.csv"
 GDFL_CALENDAR_NAME = "GDFL"
 GDFL_CALENDAR_TZ = "Etc/UTC"
 GDFL_SESSION_START = (9,15,59)
@@ -88,25 +91,53 @@ class CSVDIRBundleGDFL:
     def __init__(self, csvdir=None):
         self.csvdir = csvdir
         self.bundledir = GDFL_BUNDLE_PATH
+        self.metapath = GDFL_META_PATH
         self.calendar = self._create_calendar(
                 GDFL_CALENDAR_NAME,
                 GDFL_CALENDAR_TZ,
                 GDFL_SESSION_START,
                 GDFL_SESSION_END,
-                self._read_bizdays(join(GDFL_META_PATH,GDFL_BIZDAYLIST)))
+                self._read_bizdays(join(self.metapath,GDFL_BIZDAYLIST),self.csvdir))
         self.minute_bar_path = join(GDFL_BUNDLE_PATH,"minute")
         self.daily_bar_path = join(GDFL_BUNDLE_PATH,"daily")
         self.asset_db_path = join(GDFL_BUNDLE_PATH,ASSET_DB)
         self.adjustment_db_path = join(GDFL_BUNDLE_PATH,ADJUSTMENT_DB)
         self.meta_data = self._read_asset_db()
+        self.syms = self._read_allowed_syms(join(self.metapath,GDFL_SYMLIST))
     
-    def _read_bizdays(self, strpath):
-        dts = []
-        if not isfile(strpath):
-            raise ValueError('Business days list is missing')
+    def _read_allowed_syms(self, strpathmeta):
+        if not isfile(strpathmeta):
+            raise ValueError('Allow syms list is missing')
         else:
-            dts = read_csv(strpath)
-            dts = dts['dates'].tolist()
+            syms = read_csv(strpathmeta)
+        
+        return syms
+    
+    def _read_ingest_dates(self, strpathdata):
+        dts = []
+        try:
+            files = listdir(strpathdata)
+            files = [f for f in files if f.endswith('.csv')]
+            dts = [datetime.strptime(s[-12:-4],"%d%m%Y") for s in files]
+            dts = pd.to_datetime(dts).tolist()
+        except:
+            pass
+        
+        return dts
+    
+    def _read_bizdays(self, strpathmeta, strpathdata):
+        dts = []
+        if not isfile(strpathmeta):
+            #raise ValueError('Business days list is missing')
+            dts = self._read_ingest_dates(strpathdata)
+        else:
+            dts = read_csv(strpathmeta)
+            #dts = dts['dates'].tolist()
+            dts = pd.to_datetime(dts['dates']).tolist()
+            dts = dts + self._read_ingest_dates(strpathdata)
+        
+        bizdays = pd.DataFrame(sorted(set(dts)),columns=['dates'])
+        bizdays.to_csv(strpathmeta,index=False)
         return list(set(dts))
     
     def _create_calendar(self, cal_name,tz,session_start,session_end,dts):
@@ -118,10 +149,6 @@ class CSVDIRBundleGDFL:
             register_calendar(GDFL_CALENDAR_NAME, cal)
         return get_calendar(GDFL_CALENDAR_NAME)
         
-    def _to_daily(self,df):
-        df = df.resample('1D')
-        df.index.tz_localize(GDFL_CALENDAR_TZ)
-        return df
     
     def _read_asset_db(self):
         meta_data = pd.DataFrame(columns=['symbol','asset_name','start_date',
@@ -169,7 +196,8 @@ class CSVDIRBundleGDFL:
                       self.daily_bar_path,
                       self.asset_db_path,
                       self.adjustment_db_path,
-                      self.meta_data)
+                      self.meta_data,
+                      self.syms)
 
 
 @bundles.register("GDFL",create_writers=False)
@@ -189,7 +217,8 @@ def gdfl_bundle(environ,
                   daily_bar_path = None,
                   asset_db_path = None,
                   adjustment_db_path = None,
-                  meta_data = None):
+                  meta_data = None,
+                  syms = None):
     """
     Build a zipline data bundle from the directory with csv files.
     """
@@ -237,8 +266,9 @@ def gdfl_bundle(environ,
         print("handling {}".format(f))
         if 'MCX' in f:
             continue
-        minute_bar_writer.write(_minute_data_iter(full_path, meta_data,calendar),
+        minute_bar_writer.write(_minute_data_iter(full_path, meta_data,calendar, syms),
                      show_progress=show_progress)
+        os.remove(full_path)
     
     _write_meta_data(asset_db_writer,asset_db_path, meta_data)
 
@@ -307,13 +337,14 @@ def _pricing_iter(csvdir, symbols, meta_dict, divs_splits, show_progress):
 
             yield sid, dfr
 
-def _minute_data_iter(data_path,meta_data,calendar, exchange="NSE"):
+def _minute_data_iter(data_path,meta_data,calendar, syms, exchange="NSE"):
     data = read_csv(data_path, parse_dates = True)
     data = fixup_minute_df(data, calendar)
     start_session = pd.Timestamp(((data.index.sort_values())[0]).date())
     end_session = pd.Timestamp(((data.index.sort_values())[-1]).date())
     idx = calendar.minutes_for_sessions_in_range(start_session,end_session)
     symbols = data['Ticker'].unique()
+    names_dict = dict(zip(syms['symbol'],syms['name']))
     
     try:
         meta_dict = meta_data['symbol'].to_dict()
@@ -322,11 +353,13 @@ def _minute_data_iter(data_path,meta_data,calendar, exchange="NSE"):
         meta_dict = {}
     
     for s in symbols:
-        print(s)
         dfr = data[data['Ticker']==s]
         dfr = dfr.drop('Ticker',axis=1)
         dfr = get_equal_sized_df(dfr,idx)
         s = ticker_cleanup(s)
+        if not check_sym(s,syms):
+            continue
+        print(s)
         if s in meta_dict:
             sid = meta_dict[s]
             if meta_data.loc[sid,'start_date'] > start_session.value:
@@ -336,14 +369,15 @@ def _minute_data_iter(data_path,meta_data,calendar, exchange="NSE"):
                 meta_data.loc[sid,"auto_close_date"] = (end_session + Timedelta(days=1)).value
         else:
             sid = len(meta_data)
-            meta_data.loc[sid] = s, s, start_session.value,end_session.value,(end_session + Timedelta(days=1)).value, exchange  
+            meta_data.loc[sid] = s, names_dict[s], start_session.value,end_session.value,(end_session + Timedelta(days=1)).value, exchange  
         
+        save_as_daily(join(GDFL_DAILY_PATH,s+".csv"),dfr)
         yield sid, dfr
     
 
 def ticker_cleanup(s):
     s = s.replace(".NFO","")
-    s = s.replace("NSE_IDX","")
+    s = s.replace(".NSE_IDX","")
     s = s.replace(" ","")
     s = s.replace(".NSE","")
     return s
@@ -364,3 +398,24 @@ def get_equal_sized_df(dfr, idx):
     dfr = dfr.fillna(method = "bfill")
     dfr = dfr.dropna()
     return dfr
+
+def check_sym(s,syms):
+    syms = syms['symbol'].tolist()
+    return True if s in syms else False
+
+
+def save_as_daily(strpath,df):
+    df = df.resample('1D').agg({'open': 'first', 
+               'high': 'max', 
+               'low': 'min', 
+               'close': 'last',
+               'volume':'sum'})
+    
+    if not isfile(strpath):
+        ddf = df
+    else:
+        ddf = read_csv(strpath, index_col=0, parse_dates = True).sort_index()
+        ddf = ddf.append(df)
+        ddf = ddf.drop_duplicates()
+    
+    ddf.to_csv(strpath)
