@@ -7,6 +7,7 @@ from os import listdir
 from os.path import isfile, join
 import sqlalchemy as sa
 import pandas as pd
+import numpy as np
 from datetime import datetime
 
 from logbook import Logger, StreamHandler
@@ -17,10 +18,11 @@ from pandas import DataFrame, read_csv, Index, Timedelta, NaT
 from zipline.utils.calendars import deregister_calendar, get_calendar, register_calendar
 from zipline.utils.cli import maybe_show_progress
 from zipline.utils.calendars import ExchangeCalendarFromDate
-from zipline.data.minute_bars import BcolzMinuteBarWriter
+from zipline.data.minute_bars import BcolzMinuteBarWriter, BcolzMinuteOverlappingData
 from zipline.assets import AssetDBWriter
 from zipline.data.us_equity_pricing import BcolzDailyBarWriter, SQLiteAdjustmentWriter, BcolzDailyBarReader
 from zipline.assets.asset_db_schema import asset_db_table_names
+
 
 from . import core as bundles
 
@@ -180,6 +182,13 @@ class CSVDIRBundleGDFL:
                show_progress,
                output_dir):
 
+        self.calendar = self._create_calendar(
+                GDFL_CALENDAR_NAME,
+                GDFL_CALENDAR_TZ,
+                GDFL_SESSION_START,
+                GDFL_SESSION_END,
+                self._read_bizdays(join(self.metapath,GDFL_BIZDAYLIST),self.csvdir))
+        
         gdfl_bundle(environ,
                       asset_db_writer,
                       minute_bar_writer,
@@ -266,20 +275,20 @@ def gdfl_bundle(environ,
         print("handling {}".format(f))
         if 'MCX' in f:
             continue
-        minute_bar_writer.write(_minute_data_iter(full_path, meta_data,calendar, syms),
+        try:
+            minute_bar_writer.write(_minute_data_iter(full_path, meta_data,calendar, syms),
                      show_progress=show_progress)
+        except BcolzMinuteOverlappingData:
+            pass
         os.remove(full_path)
     
+    daily_bar_writer.write(_pricing_iter(GDFL_DAILY_PATH, meta_data['symbol'].tolist(),
+                                         divs_splits, show_progress),
+                     show_progress=show_progress)
+        
     _write_meta_data(asset_db_writer,asset_db_path, meta_data)
+    _write_adjustment_data(adjustment_writer,adjustment_db_path,divs_splits)
 
-    divs_splits['divs']['sid'] = divs_splits['divs']['sid'].astype(int)
-    divs_splits['stock_divs']['sid'] = divs_splits['stock_divs']['sid'].astype(int)
-    divs_splits['splits']['sid'] = divs_splits['splits']['sid'].astype(int)
-    divs_splits['mergers']['sid'] = divs_splits['mergers']['sid'].astype(int)
-    adjustment_writer.write(splits=divs_splits['splits'],
-                            mergers=divs_splits['mergers'],
-                            dividends=divs_splits['divs'],
-                            stock_dividends=divs_splits['stock_divs'])
 
 def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
     try:
@@ -289,7 +298,22 @@ def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
 
     asset_db_writer.write(equities=meta_data)
 
-def _pricing_iter(csvdir, symbols, meta_dict, divs_splits, show_progress):
+def _write_adjustment_data(adjustment_writer,adjustment_db_path,divs_splits):
+    try:
+        os.remove(adjustment_db_path)
+    except:
+        pass
+    
+    divs_splits['divs']['sid'] = divs_splits['divs']['sid'].astype(int)
+    divs_splits['stock_divs']['sid'] = divs_splits['stock_divs']['sid'].astype(int)
+    divs_splits['splits']['sid'] = divs_splits['splits']['sid'].astype(int)
+    divs_splits['mergers']['sid'] = divs_splits['mergers']['sid'].astype(int)
+    adjustment_writer.write(splits=divs_splits['splits'],
+                            mergers=divs_splits['mergers'],
+                            dividends=divs_splits['divs'],
+                            stock_dividends=divs_splits['stock_divs'])
+
+def _pricing_iter(csvdir, symbols, divs_splits, show_progress):
     with maybe_show_progress(symbols, show_progress,
                              label='Loading custom pricing data: ') as it:
         files = os.listdir(csvdir)
@@ -353,12 +377,15 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, exchange="NSE"):
         meta_dict = {}
     
     for s in symbols:
-        dfr = data[data['Ticker']==s]
+        dfr = data[data['Ticker']==s].sort_index().drop_duplicates()
+        dfr = dfr[~dfr.index.duplicated(keep='last')]
         dfr = dfr.drop('Ticker',axis=1)
         dfr = get_equal_sized_df(dfr,idx)
+        
         s = ticker_cleanup(s)
         if not check_sym(s,syms):
             continue
+
         print(s)
         if s in meta_dict:
             sid = meta_dict[s]
@@ -383,11 +410,16 @@ def ticker_cleanup(s):
     return s
 
 def fixup_minute_df(data, calendar):
-    idx = pd.to_datetime(data['Date'] + " " + data['Time'])
+    ticker_col = np.where(data.columns.to_series().str.lower().str.contains('ticker') == True)[0][0]
+    dt_col = np.where(data.columns.to_series().str.lower().str.contains('date') == True)[0][0]
+    time_col = np.where(data.columns.to_series().str.lower().str.contains('time') == True)[0][0]
+    oi_col = np.where(data.columns.to_series().str.lower().str.contains('open interest') == True)[0][0]
+    idx = pd.to_datetime(data.iloc[:,dt_col] + " " + data.iloc[:,time_col])
     data = data.set_index(idx)
     data.index = data.index.tz_localize(calendar.tz)
-    data = data.drop(['Date','Time','Open Interest'],axis=1)
-    data = data[data['Ticker'].str.contains("PE.NFO|CE.NFO")==False]
+    dropcols = [dt_col,time_col,oi_col]
+    data = data.drop(data.columns[dropcols],axis=1)
+    data = data[data.iloc[:,ticker_col].str.contains("PE.NFO|CE.NFO")==False]
     return data
 
 def get_equal_sized_df(dfr, idx):
