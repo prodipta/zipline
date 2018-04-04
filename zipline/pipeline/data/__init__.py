@@ -6,4 +6,5 @@ __all__ = [
     'Column',
     'DataSet',
     'USEquityPricing',
+    'EquityPricing',
 ]

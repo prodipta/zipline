@@ -44,6 +44,7 @@ GDFL_CALENDAR_TZ = "Etc/UTC"
 GDFL_SESSION_START = (9,15,59)
 GDFL_SESSION_END = (15,29,59)
 GDFL_MINUTES_PER_DAY = 375
+GDFL_BENCHMARK_SYM = 'NIFTY50'
 
 
 def gdfl_minutedata(csvdir=GDFL_DATA_PATH):
@@ -244,7 +245,8 @@ def gdfl_bundle(environ,
                                              calendar,
                                              start_session,
                                              end_session,
-                                             GDFL_MINUTES_PER_DAY)
+                                             GDFL_MINUTES_PER_DAY,
+                                             GDFL_BENCHMARK_SYM)
     daily_bar_writer = BcolzDailyBarWriter(daily_bar_path,
                                              calendar,
                                              start_session,
@@ -332,7 +334,7 @@ def _pricing_iter(csvdir, symbols, divs_splits, show_progress):
                            index_col=0).sort_index()
 
             if 'split' in dfr.columns:
-                tmp = 1. / dfr[dfr['split'] != 1.0]['split']
+                tmp = dfr[dfr['split'] != 1.0]['split']
                 split = DataFrame(data=tmp.index.tolist(),
                                   columns=['effective_date'])
                 split['ratio'] = tmp.tolist()

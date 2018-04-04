@@ -1,5 +1,6 @@
 import errno
 import os
+import json
 
 import click
 import logbook
@@ -11,6 +12,7 @@ from zipline.utils.calendars.calendar_utils import get_calendar
 from zipline.utils.compat import wraps
 from zipline.utils.cli import Date, Timestamp
 from zipline.utils.run_algo import _run, load_extensions
+from zipline.utils.save_to_json import convert_zipline_results_to_json
 
 try:
     __IPYTHON__
@@ -251,10 +253,14 @@ def run(ctx,
         environ=os.environ,
     )
 
+    perf = convert_zipline_results_to_json(perf)
     if output == '-':
-        click.echo(str(perf))
+        #click.echo(str(perf))
+        print json.dumps(perf)
     elif output != os.devnull:  # make the zipline magic not write any data
-        perf.to_pickle(output)
+        #perf.to_pickle(output)
+        with open(output, 'w') as outfile:
+            json.dump(perf,outfile)
 
     return perf
 

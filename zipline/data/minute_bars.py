@@ -218,6 +218,7 @@ class BcolzMinuteBarMetadata(object):
                 version = 0
 
             default_ohlc_ratio = raw_data['ohlc_ratio']
+            bm_symbol = raw_data['benchmark_symbol']
 
             if version >= 1:
                 minutes_per_day = raw_data['minutes_per_day']
@@ -256,6 +257,7 @@ class BcolzMinuteBarMetadata(object):
                 start_session,
                 end_session,
                 minutes_per_day,
+                bm_symbol,
                 version=version,
             )
 
@@ -267,6 +269,7 @@ class BcolzMinuteBarMetadata(object):
         start_session,
         end_session,
         minutes_per_day,
+        benchmark = None,
         version=FORMAT_VERSION,
     ):
         self.calendar = calendar
@@ -275,6 +278,7 @@ class BcolzMinuteBarMetadata(object):
         self.default_ohlc_ratio = default_ohlc_ratio
         self.ohlc_ratios_per_sid = ohlc_ratios_per_sid
         self.minutes_per_day = minutes_per_day
+        self.bm_symbol = benchmark
         self.version = version
 
     def write(self, rootdir):
@@ -334,6 +338,7 @@ class BcolzMinuteBarMetadata(object):
             'ohlc_ratios_per_sid': self.ohlc_ratios_per_sid,
             'minutes_per_day': self.minutes_per_day,
             'calendar_name': self.calendar.name,
+            'benchmark_symbol': self.bm_symbol,
             'start_session': str(self.start_session.date()),
             'end_session': str(self.end_session.date()),
             # Write these values for backwards compatibility
@@ -446,6 +451,7 @@ class BcolzMinuteBarWriter(object):
                  start_session,
                  end_session,
                  minutes_per_day,
+                 benchmark_symbol = None,
                  default_ohlc_ratio=OHLC_RATIO,
                  ohlc_ratios_per_sid=None,
                  expectedlen=DEFAULT_EXPECTEDLEN,
@@ -460,6 +466,7 @@ class BcolzMinuteBarWriter(object):
         self._schedule = calendar.schedule[slicer]
         self._session_labels = self._schedule.index
         self._minutes_per_day = minutes_per_day
+        self.bm_symbol = benchmark_symbol
         self._expectedlen = expectedlen
         self._default_ohlc_ratio = default_ohlc_ratio
         self._ohlc_ratios_per_sid = ohlc_ratios_per_sid
@@ -475,6 +482,7 @@ class BcolzMinuteBarWriter(object):
                 self._start_session,
                 self._end_session,
                 self._minutes_per_day,
+                self.bm_symbol,
             )
             metadata.write(self._rootdir)
 
@@ -495,6 +503,7 @@ class BcolzMinuteBarWriter(object):
             metadata.start_session,
             end_session if end_session is not None else metadata.end_session,
             metadata.minutes_per_day,
+            metadata.bm_symbol,
             metadata.default_ohlc_ratio,
             metadata.ohlc_ratios_per_sid,
             write_metadata=end_session is not None
@@ -935,7 +944,8 @@ class BcolzMinuteBarReader(MinuteBarReader):
             field: LRU(sid_cache_size)
             for field in self.FIELDS
         }
-
+        
+        self.bm_symbol = metadata.bm_symbol
         self._last_get_value_dt_position = None
         self._last_get_value_dt_value = None
 

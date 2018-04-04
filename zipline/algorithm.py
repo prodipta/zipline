@@ -251,7 +251,6 @@ class TradingAlgorithm(object):
                 Any asset identifiers that are not provided in the
                 equities_metadata, but will be traded by this TradingAlgorithm
         """
-        print('creating new algo object')
         self.sources = []
 
         # List of trading controls to be used to validate orders.
@@ -530,7 +529,7 @@ class TradingAlgorithm(object):
         before_trading_start_minutes = days_at_time(
             self.sim_params.sessions,
             time(8, 45),
-            "US/Eastern"
+            self.trading_calendar.tz
         )
 
         return MinuteSimulationClock(
@@ -721,8 +720,6 @@ class TradingAlgorithm(object):
             perfs = []
             for perf in self.get_generator():
                 perfs.append(perf)
-                #if 'daily_perf' in perf:
-                    #print('Date: {}, Portfolio Value: {}'.format(perf['daily_perf']['period_close'],perf['daily_perf']['portfolio_value']))
 
             # convert perf dict to pandas dataframe
             daily_stats = self._create_daily_stats(perfs)

@@ -69,6 +69,8 @@ def _run(handle_data,
 
     This is shared between the cli and :func:`zipline.run_algo`.
     """
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    
     if algotext is not None:
         if local_namespace:
             ip = get_ipython()  # noqa
@@ -113,15 +115,12 @@ def _run(handle_data,
         else:
             click.echo(algotext)
 
-    if trading_calendar is None:
-        trading_calendar = get_calendar('NYSE')
 
     if bundle is not None:
-        bundle_data = load(
-            bundle,
-            environ,
-            bundle_timestamp,
-        )
+        if os.path.isdir(bundle):
+            bundle_data = load("bundle",environ,path=bundle)
+        else:
+            bundle_data = load(bundle,environ,bundle_timestamp)
 
         prefix, connstr = re.split(
             r'sqlite:///',
@@ -133,7 +132,14 @@ def _run(handle_data,
                 "invalid url %r, must begin with 'sqlite:///'" %
                 str(bundle_data.asset_finder.engine.url),
             )
-        env = TradingEnvironment(asset_db_path=connstr, environ=environ)
+        
+        trading_calendar = bundle_data.equity_minute_bar_reader.calendar
+        bm_symbol = bundle_data.equity_minute_bar_reader.bm_symbol
+        
+        env = TradingEnvironment(asset_db_path=connstr, 
+                                 trading_calendar = trading_calendar,
+                                 bm_symbol = None,
+                                 environ=environ)
         first_trading_day =\
             bundle_data.equity_minute_bar_reader.first_trading_day
         data = DataPortal(
@@ -157,14 +163,14 @@ def _run(handle_data,
                 "No PipelineLoader registered for column %s." % column
             )
     else:
-        env = TradingEnvironment(environ=environ)
-        choose_loader = None
+        raise ValueError("Bundle input missing")
 
     perf = TradingAlgorithm(
         namespace=namespace,
         env=env,
         get_pipeline_loader=choose_loader,
         trading_calendar=trading_calendar,
+        benchmark_sid = env.asset_finder.lookup_symbol(bm_symbol,as_of_date = end),
         sim_params=create_simulation_parameters(
             start=start,
             end=end,
@@ -186,10 +192,12 @@ def _run(handle_data,
         overwrite_sim_params=False,
     )
 
-    if output == '-':
-        click.echo(str(perf))
-    elif output != os.devnull:  # make the zipline magic not write any data
-        perf.to_pickle(output)
+# =============================================================================
+#     if output == '-':
+#         click.echo(str(perf))
+#     elif output != os.devnull:  # make the zipline magic not write any data
+#         perf.to_pickle(output)
+# =============================================================================
 
     return perf
 
