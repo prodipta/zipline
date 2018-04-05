@@ -243,7 +243,7 @@ def xnse_bundle(environ,
 
 
     _write_meta_data(asset_db_writer,asset_db_path,meta_data)
-    _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data)
+    _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data,syms)
 
 def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
     try:
@@ -253,7 +253,7 @@ def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
 
     asset_db_writer.write(equities=meta_data)
     
-def _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data):
+def _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data,syms):
     try:
         os.remove(adjustment_db_path)
     except:
@@ -262,16 +262,19 @@ def _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data):
     meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
     
     mergers = pd.read_csv(join(XNSE_META_PATH,"mergers.csv"),parse_dates=True)
+    mergers = mergers[mergers.symbol.isin(syms.symbol)]
     mergers['effective_date'] = pd.to_datetime(mergers['effective_date'])
     mergers['sid'] = [meta_dict[sym] for sym in mergers['symbol'].tolist()]
     mergers =mergers.drop(['symbol'],axis=1)
     
     splits = pd.read_csv(join(XNSE_META_PATH,"splits.csv"),parse_dates=True)
+    splits = splits[splits.symbol.isin(syms.symbol)]
     splits['effective_date'] = pd.to_datetime(splits['effective_date'])
     splits['sid'] = [meta_dict[sym] for sym in splits['symbol'].tolist()]
     splits =splits.drop(['symbol'],axis=1)
     
     dividends = pd.read_csv(join(XNSE_META_PATH,"dividends.csv"),parse_dates=True)
+    dividends = dividends[dividends.symbol.isin(syms.symbol)]
     dividends['ex_date'] = pd.to_datetime(dividends['ex_date'])
     dividends['declared_date'] = pd.to_datetime(dividends['declared_date'])
     dividends['pay_date'] = pd.to_datetime(dividends['pay_date'])
