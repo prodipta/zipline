@@ -134,9 +134,9 @@ class CSVDIRBundleXNSE:
                                           'exchange'])
         
         query = ("SELECT equity_symbol_mappings.symbol, equities.asset_name, "
-                 "equities.start_date, equities.end_date, equities.auto_close_date, "
-                 "equities.exchange from equities INNER JOIN equity_symbol_mappings "
-                 "ON equities.sid = equity_symbol_mappings.sid")
+                     "equities.start_date, equities.end_date, equities.auto_close_date, "
+                     "equities.exchange from equities INNER JOIN equity_symbol_mappings "
+                     "ON equities.sid = equity_symbol_mappings.sid")
         
         engine = sa.create_engine('sqlite:///' + self.asset_db_path)
         conn = engine.connect()
@@ -213,14 +213,6 @@ def xnse_bundle(environ,
 
     if not os.path.isdir(csvdir):
         raise ValueError("%s is not a directory" % csvdir)
-        
-    
-
-    divs_splits = {'divs': DataFrame(columns=['sid', 'amount',
-                                              'ex_date', 'record_date',
-                                              'declared_date', 'pay_date']),
-                   'splits': DataFrame(columns=['sid', 'ratio',
-                                                'effective_date'])}
 
     minute_bar_writer = BcolzMinuteBarWriter(minute_bar_path,
                                              calendar,
@@ -247,21 +239,53 @@ def xnse_bundle(environ,
 
     
     daily_bar_writer.write(_pricing_iter(csvdir, symbols, meta_data, syms,
-                divs_splits, show_progress),show_progress=show_progress)
+                show_progress),show_progress=show_progress)
 
-        # Hardcode the exchange to "CSVDIR" for all assets and (elsewhere)
-        # register "CSVDIR" to resolve to the NYSE calendar, because these
-        # are all equities and thus can use the NYSE calendar.
-    #metadata['exchange'] = "NSE"
+
+    _write_meta_data(asset_db_writer,asset_db_path,meta_data)
+    _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data)
+
+def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
+    try:
+        os.remove(asset_db_path)
+    except:
+        pass
 
     asset_db_writer.write(equities=meta_data)
+    
+def _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data):
+    try:
+        os.remove(adjustment_db_path)
+    except:
+        pass
+    
+    meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
+    
+    mergers = pd.read_csv(join(XNSE_META_PATH,"mergers.csv"),parse_dates=True)
+    mergers['effective_date'] = pd.to_datetime(mergers['effective_date'])
+    mergers['sid'] = [meta_dict[sym] for sym in mergers['symbol'].tolist()]
+    mergers =mergers.drop(['symbol'],axis=1)
+    
+    splits = pd.read_csv(join(XNSE_META_PATH,"splits.csv"),parse_dates=True)
+    splits['effective_date'] = pd.to_datetime(splits['effective_date'])
+    splits['sid'] = [meta_dict[sym] for sym in splits['symbol'].tolist()]
+    splits =splits.drop(['symbol'],axis=1)
+    
+    dividends = pd.read_csv(join(XNSE_META_PATH,"dividends.csv"),parse_dates=True)
+    dividends['ex_date'] = pd.to_datetime(dividends['ex_date'])
+    dividends['declared_date'] = pd.to_datetime(dividends['declared_date'])
+    dividends['pay_date'] = pd.to_datetime(dividends['pay_date'])
+    dividends['record_date'] = pd.to_datetime(dividends['record_date'])
+    dividends['sid'] = [meta_dict[sym] for sym in dividends['symbol'].tolist()]
+    dividends =dividends.drop(['symbol'],axis=1)
+    
+    adjustment_writer.write(splits=splits,
+                            mergers=mergers,
+                            dividends=dividends)
 
-    divs_splits['divs']['sid'] = divs_splits['divs']['sid'].astype(int)
-    divs_splits['splits']['sid'] = divs_splits['splits']['sid'].astype(int)
-    adjustment_writer.write(splits=divs_splits['splits'],dividends=divs_splits['divs'])
 
 
-def _pricing_iter(csvdir, symbols, meta_data, syms, divs_splits, show_progress):
+def _pricing_iter(csvdir, symbols, meta_data, syms, show_progress):
     with maybe_show_progress(symbols, show_progress,
                              label='Loading custom pricing data: ') as it:
         files = os.listdir(csvdir)
@@ -278,7 +302,7 @@ def _pricing_iter(csvdir, symbols, meta_data, syms, divs_splits, show_progress):
 
             try:
                 fname = [fname for fname in files
-                         if '%s.csv' % s in fname][0]
+                         if '%s.csv' % s == fname][0]
             except IndexError:
                 raise ValueError("%s.csv file is not in %s" % (s, csvdir))
 
@@ -300,36 +324,7 @@ def _pricing_iter(csvdir, symbols, meta_data, syms, divs_splits, show_progress):
             else:
                 sid = len(meta_data)
                 meta_data.loc[sid] = s, names_dict[s], start_date,end_date,(end_date + Timedelta(days=1)), "NSE"  
-
-            if 'split' in dfr.columns:
-                tmp = dfr[dfr['split'] != 1.0]['split']
-                split = DataFrame(data=tmp.index.tolist(),
-                                  columns=['effective_date'])
-                split['ratio'] = tmp.tolist()
-                split['sid'] = sid
-
-                splits = divs_splits['splits']
-                index = Index(range(splits.shape[0],
-                                    splits.shape[0] + split.shape[0]))
-                split.set_index(index, inplace=True)
-                divs_splits['splits'] = splits.append(split)
-
-            if 'dividend' in dfr.columns:
-                # ex_date   amount  sid record_date declared_date pay_date
-                tmp = dfr[dfr['dividend'] != 0.0]['dividend']
-                div = DataFrame(data=tmp.index.tolist(), columns=['ex_date'])
-                div['record_date'] = NaT
-                div['declared_date'] = NaT
-                div['pay_date'] = NaT
-                div['amount'] = tmp.tolist()
-                div['sid'] = sid
-
-                divs = divs_splits['divs']
-                ind = Index(range(divs.shape[0], divs.shape[0] + div.shape[0]))
-                div.set_index(ind, inplace=True)
-                divs_splits['divs'] = divs.append(div)
             
-
             yield sid, dfr
 
 def check_sym(s,syms):
