@@ -11,9 +11,7 @@ import numpy as np
 from datetime import datetime
 
 from logbook import Logger, StreamHandler
-#from numpy import empty
-from pandas import DataFrame, read_csv, Index, Timedelta, NaT
-#from contextlib2 import ExitStack
+from pandas import read_csv, Timedelta
 
 from zipline.utils.calendars import deregister_calendar, get_calendar, register_calendar
 from zipline.utils.cli import maybe_show_progress
@@ -256,18 +254,7 @@ def gdfl_bundle(environ,
                                                BcolzDailyBarReader(daily_bar_path),
                                                calendar.all_sessions,
                                                overwrite=True)
-    
 
-    divs_splits = {'divs': DataFrame(columns=['sid', 'amount',
-                                              'ex_date', 'record_date',
-                                              'declared_date', 'pay_date']),
-                   'stock_divs': DataFrame(columns=['sid', 'amount',
-                                              'ex_date', 'record_date',
-                                              'declared_date', 'pay_date']),
-                   'splits': DataFrame(columns=['sid', 'ratio',
-                                                'effective_date']),
-                   'mergers': DataFrame(columns=['sid', 'ratio',
-                                                'effective_date'])}
     
     files = listdir(csvdir)
     files = [f for f in files if f.endswith('.csv')]
@@ -285,11 +272,10 @@ def gdfl_bundle(environ,
         os.remove(full_path)
     
     daily_bar_writer.write(_pricing_iter(GDFL_DAILY_PATH, meta_data['symbol'].tolist(),
-                                         divs_splits, show_progress),
-                     show_progress=show_progress)
+                                         show_progress),show_progress=show_progress)
         
     _write_meta_data(asset_db_writer,asset_db_path, meta_data)
-    _write_adjustment_data(adjustment_writer,adjustment_db_path,divs_splits)
+    _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data,syms)
 
 
 def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
@@ -300,22 +286,44 @@ def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
 
     asset_db_writer.write(equities=meta_data)
 
-def _write_adjustment_data(adjustment_writer,adjustment_db_path,divs_splits):
+def _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data,syms):
     try:
         os.remove(adjustment_db_path)
     except:
         pass
     
-    divs_splits['divs']['sid'] = divs_splits['divs']['sid'].astype(int)
-    divs_splits['stock_divs']['sid'] = divs_splits['stock_divs']['sid'].astype(int)
-    divs_splits['splits']['sid'] = divs_splits['splits']['sid'].astype(int)
-    divs_splits['mergers']['sid'] = divs_splits['mergers']['sid'].astype(int)
-    adjustment_writer.write(splits=divs_splits['splits'],
-                            mergers=divs_splits['mergers'],
-                            dividends=divs_splits['divs'],
-                            stock_dividends=divs_splits['stock_divs'])
+    first_available_day = pd.Timestamp(pd.read_csv(join(GDFL_META_PATH,GDFL_BIZDAYLIST),parse_dates=True)['dates'][0])
+    meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
+    
+    mergers = pd.read_csv(join(GDFL_META_PATH,"mergers.csv"),parse_dates=True)
+    mergers = mergers[mergers.symbol.isin(syms.symbol)]
+    mergers['effective_date'] = pd.to_datetime(mergers['effective_date'])
+    mergers['sid'] = [meta_dict[sym] for sym in mergers['symbol'].tolist()]
+    mergers = mergers[mergers['effective_date']>first_available_day]
+    mergers =mergers.drop(['symbol'],axis=1)
+    
+    splits = pd.read_csv(join(GDFL_META_PATH,"splits.csv"),parse_dates=True)
+    splits = splits[splits.symbol.isin(syms.symbol)]
+    splits['effective_date'] = pd.to_datetime(splits['effective_date'])
+    splits['sid'] = [meta_dict[sym] for sym in splits['symbol'].tolist()]
+    splits = splits[splits['effective_date']>first_available_day]
+    splits =splits.drop(['symbol'],axis=1)
+    
+    dividends = pd.read_csv(join(GDFL_META_PATH,"dividends.csv"),parse_dates=True)
+    dividends = dividends[dividends.symbol.isin(syms.symbol)]
+    dividends['ex_date'] = pd.to_datetime(dividends['ex_date'])
+    dividends['declared_date'] = pd.to_datetime(dividends['declared_date'])
+    dividends['pay_date'] = pd.to_datetime(dividends['pay_date'])
+    dividends['record_date'] = pd.to_datetime(dividends['record_date'])
+    dividends['sid'] = [meta_dict[sym] for sym in dividends['symbol'].tolist()]
+    dividends = dividends[dividends['ex_date']>first_available_day]
+    dividends =dividends.drop(['symbol'],axis=1)
+    
+    adjustment_writer.write(splits=splits,
+                            mergers=mergers,
+                            dividends=dividends)
 
-def _pricing_iter(csvdir, symbols, divs_splits, show_progress):
+def _pricing_iter(csvdir, symbols, show_progress):
     with maybe_show_progress(symbols, show_progress,
                              label='Loading custom pricing data: ') as it:
         files = os.listdir(csvdir)
@@ -332,34 +340,6 @@ def _pricing_iter(csvdir, symbols, divs_splits, show_progress):
                            parse_dates=[0],
                            infer_datetime_format=True,
                            index_col=0).sort_index()
-
-            if 'split' in dfr.columns:
-                tmp = dfr[dfr['split'] != 1.0]['split']
-                split = DataFrame(data=tmp.index.tolist(),
-                                  columns=['effective_date'])
-                split['ratio'] = tmp.tolist()
-                split['sid'] = sid
-
-                splits = divs_splits['splits']
-                index = Index(range(splits.shape[0],
-                                    splits.shape[0] + split.shape[0]))
-                split.set_index(index, inplace=True)
-                divs_splits['splits'] = splits.append(split)
-
-            if 'dividend' in dfr.columns:
-                # ex_date   amount  sid record_date declared_date pay_date
-                tmp = dfr[dfr['dividend'] != 0.0]['dividend']
-                div = DataFrame(data=tmp.index.tolist(), columns=['ex_date'])
-                div['record_date'] = NaT
-                div['declared_date'] = NaT
-                div['pay_date'] = NaT
-                div['amount'] = tmp.tolist()
-                div['sid'] = sid
-
-                divs = divs_splits['divs']
-                ind = Index(range(divs.shape[0], divs.shape[0] + div.shape[0]))
-                div.set_index(ind, inplace=True)
-                divs_splits['divs'] = divs.append(div)
 
             yield sid, dfr
 
@@ -388,7 +368,7 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, exchange="NSE"):
         if not check_sym(s,syms):
             continue
 
-        print(s)
+        #print(s)
         if s in meta_dict:
             sid = meta_dict[s]
             if meta_data.loc[sid,'start_date'] > start_session.value:

@@ -6,18 +6,15 @@ import sys
 from os.path import isfile, join
 import sqlalchemy as sa
 import pandas as pd
-import numpy as np
-from datetime import datetime
 
 from logbook import Logger, StreamHandler
-from numpy import empty
-from pandas import DataFrame, read_csv, Index, Timedelta, NaT
+from pandas import read_csv, Timedelta
 
 from zipline.utils.calendars import deregister_calendar, get_calendar, register_calendar
 from zipline.utils.cli import maybe_show_progress
 from zipline.utils.calendars import ExchangeCalendarFromDate
 from zipline.assets import AssetDBWriter
-from zipline.data.minute_bars import BcolzMinuteBarWriter, BcolzMinuteOverlappingData
+from zipline.data.minute_bars import BcolzMinuteBarWriter
 from zipline.data.us_equity_pricing import BcolzDailyBarWriter, SQLiteAdjustmentWriter, BcolzDailyBarReader
 from . import core as bundles
 from zipline.assets.asset_db_schema import asset_db_table_names
