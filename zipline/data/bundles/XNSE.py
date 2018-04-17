@@ -222,10 +222,6 @@ def xnse_bundle(environ,
                                              start_session,
                                              end_session)
     asset_db_writer = AssetDBWriter(asset_db_path)
-    adjustment_writer = SQLiteAdjustmentWriter(adjustment_db_path,
-                                               BcolzDailyBarReader(daily_bar_path),
-                                               calendar.all_sessions,
-                                               overwrite=True)
     
     
     symbols = sorted(item.split('.csv')[0] 
@@ -240,7 +236,7 @@ def xnse_bundle(environ,
 
 
     _write_meta_data(asset_db_writer,asset_db_path,meta_data)
-    _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data,syms)
+    _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data,syms,daily_bar_path,calendar.all_sessions)
 
 def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
     try:
@@ -250,11 +246,16 @@ def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
 
     asset_db_writer.write(equities=meta_data)
     
-def _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data,syms):
+def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,cal_sessions):
     try:
         os.remove(adjustment_db_path)
     except:
         pass
+    
+    adjustment_writer = SQLiteAdjustmentWriter(adjustment_db_path,
+                                               BcolzDailyBarReader(daily_bar_path),
+                                               cal_sessions,
+                                               overwrite=True)
     
     meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
     

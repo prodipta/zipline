@@ -46,7 +46,7 @@ def convert_zipline_results_to_json(results):
 
     # extract structured info using pyfolio
     if any(results['transactions'].apply(len)) > 0:
-        returns, positions, transactions, gross_lev = extract_rets_pos_txn_from_zipline(results)
+        returns, positions, transactions, _ = extract_rets_pos_txn_from_zipline(results)
         average_txn = np.mean(abs(transactions['txn_dollars']))
         # for plotting daily transaction, use <transactions>
         transactions['id'] = pd.Series([str(i) for i in range(len(transactions))],index=transactions.index)

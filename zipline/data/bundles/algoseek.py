@@ -1,6 +1,10 @@
+# -*- coding: utf-8 -*-
 """
-Module for building a complete dataset from local directory with csv files.
+Created on Wed Apr 11 12:51:03 2018
+
+@author: Prodipta
 """
+
 import os
 import sys
 from os import listdir
@@ -30,7 +34,7 @@ logger = Logger(__name__)
 logger.handlers.append(handler)
 
 
-def gdfl_minutedata(configpath=None):
+def algoseek_minutedata(configpath=None):
     """
     Generate an ingest function for custom data bundle
     This function can be used in ~/.zipline/extension.py
@@ -65,10 +69,10 @@ def gdfl_minutedata(configpath=None):
                 '/full/path/to/the/csvdir/directory'))
     """
 
-    return CSVDIRBundleGDFL(configpath).ingest
+    return CSVDIRBundleALGOSEEK(configpath).ingest
 
 
-class CSVDIRBundleGDFL:
+class CSVDIRBundleALGOSEEK:
     """
     Wrapper class to call csvdir_bundle with provided
     list of time frames and a path to the csvdir directory
@@ -84,7 +88,9 @@ class CSVDIRBundleGDFL:
             self.adjustment_db_name=config["ADJUSTMENT_DB"]
             self.metadata_file=config["META_DATA"]
             self.bizdays_file=config["BIZDAYLIST"]
+            self.symdata_file=config["SYMDATA"]
             self.symlist_file=config["SYMLIST"]
+            self.benchmark_file=config["BENCHMARKDATA"]
             self.benchmar_symbol=config["BENCHMARK_SYM"]
             self.calendar_name=config["CALENDAR_NAME"]
             self.calendar_tz=config["CALENDAR_TZ"]
@@ -105,16 +111,22 @@ class CSVDIRBundleGDFL:
         self.daily_bar_path = join(self.bundle_path,"daily")
         self.asset_db_path = join(self.bundle_path,self.asset_db_name)
         self.adjustment_db_path = join(self.bundle_path,self.adjustment_db_name)
-        #self.benchmark_data = self._read_benchmark_data(join(self.meta_path,self.benchmark_file))
+        self.benchmark_data = self._read_benchmark_data(join(self.meta_path,self.benchmark_file))
         self.meta_data = self._read_asset_db()
-        self.syms = self._read_allowed_syms(join(self.meta_path,self.symlist_file))
+        self.syms = self._read_allowed_syms(join(self.meta_path,self.symdata_file))
+    
+    def _read_benchmark_data(self,strpath):
+        if not isfile(strpath):
+            raise ValueError('Benchmark data missing')
+        df = pd.read_csv(strpath,parse_dates=[0],index_col=0).sort_index()
+        return df
     
     def _read_allowed_syms(self, strpathmeta):
         if not isfile(strpathmeta):
-            raise ValueError('Allow syms list missing')
+            raise ValueError('Allowed syms list missing')
         else:
             syms = read_csv(strpathmeta)
-        
+        syms.loc[syms["Exchange"] == "DELISTED","Exchange"] = syms.loc[syms["Exchange"] == "DELISTED","Delisted.From"]
         return syms
     
     def _read_bizdays(self, strpathmeta):
@@ -150,6 +162,12 @@ class CSVDIRBundleGDFL:
         table_exists = all(engine.dialect.has_table(conn,t) for t in asset_db_table_names)
         if table_exists:
             meta_data = pd.read_sql_query(query, conn)
+        else:
+            # make sure we do have the benchmark in asset table
+            start_date = self.bizdays[0]
+            end_date = self.bizdays[-1]
+            ac_date = (end_date + Timedelta(days=1))
+            meta_data.loc[0] = self.benchmar_symbol,"", start_date.value,end_date.value,ac_date.value, ""
         return(meta_data)
 
     def ingest(self,
@@ -172,7 +190,7 @@ class CSVDIRBundleGDFL:
                 self.cal_session_end,
                 self._read_bizdays(join(self.meta_path,self.bizdays_file)))
         
-        gdfl_bundle(environ,
+        algoseek_bundle(environ,
                       asset_db_writer,
                       minute_bar_writer,
                       daily_bar_writer,
@@ -194,11 +212,12 @@ class CSVDIRBundleGDFL:
                       self.bizdays,
                       self.cal_minutes_per_day,
                       self.benchmar_symbol,
-                      self.daily_path)
+                      self.daily_path,
+                      self.benchmark_data)
 
 
-@bundles.register("GDFL",create_writers=False)
-def gdfl_bundle(environ,
+@bundles.register("ALGOSEEK",create_writers=False)
+def algoseek_bundle(environ,
                   asset_db_writer,
                   minute_bar_writer,
                   daily_bar_writer,
@@ -220,7 +239,8 @@ def gdfl_bundle(environ,
                   bizdays = None,
                   minutes_per_day = None,
                   benchmark_symbol = None,
-                  save_daily_path = None):
+                  save_daily_path = None,
+                  benchmark_data = None):
     """
     Build a zipline data bundle from the directory with csv files.
     """
@@ -241,23 +261,33 @@ def gdfl_bundle(environ,
                                              benchmark_symbol)
     daily_bar_writer = BcolzDailyBarWriter(daily_bar_path,
                                              calendar,
-                                             start_session,
-                                             end_session)
+                                             calendar.all_sessions[0],
+                                             calendar.all_sessions[-1])
     asset_db_writer = AssetDBWriter(asset_db_path)
 
-    
     try:
-        minute_bar_writer.write(_minute_data_iter(csvdir, meta_data,calendar, syms, bizdays,"NSE",save_daily_path),
+        minute_bar_writer.write(_minute_data_iter(csvdir, meta_data,calendar, syms, bizdays,"NYSE",save_daily_path),
                  show_progress=show_progress)
     except BcolzMinuteOverlappingData:
         pass
     
+    #write the benchmark data to save_daily_path to ingest
+    daily_benchmark = benchmark_data.loc[bizdays]
+    assert len(daily_benchmark) == len(bizdays), (
+            'Benchmark data does not match with expected number. '
+            'Got {} rows, expected {}'.format(len(daily_benchmark),
+                 len(bizdays)))
+    daily_benchmark.to_csv(join(save_daily_path,benchmark_symbol+".csv"))
+    
     daily_bar_writer.write(_pricing_iter(save_daily_path, meta_data['symbol'].tolist(),
                                          show_progress),show_progress=show_progress)
         
+    #print("the last bizday is {}".format(bizdays[-1]))
+    meta_data.loc[meta_data['symbol']==benchmark_symbol,'end_date'] = bizdays[-1].value
+    meta_data.loc[meta_data['symbol']==benchmark_symbol,'auto_close_date'] = (bizdays[-1]+Timedelta(days=1)).value
     _write_meta_data(asset_db_writer,asset_db_path, meta_data)
     _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
-                           calendar.all_sessions,bizdays, meta_path)
+                           calendar.all_sessions, bizdays, meta_path)
 
 
 def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
@@ -269,7 +299,7 @@ def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
     asset_db_writer.write(equities=meta_data)
 
 def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
-                           cal_sessions,bizdays, meta_path):
+                           cal_sessions, bizdays, meta_path):
     try:
         os.remove(adjustment_db_path)
     except:
@@ -280,33 +310,44 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
                                                cal_sessions,
                                                overwrite=True)
     
+    divs_splits = {'divs': pd.DataFrame(columns=['sid', 'amount',
+                                              'ex_date', 'record_date',
+                                              'declared_date', 'pay_date']),
+                   'splits': pd.DataFrame(columns=['sid', 'ratio',
+                                                'effective_date'])}
+    divs_splits['divs']['sid'] = divs_splits['divs']['sid'].astype(int)
+    divs_splits['splits']['sid'] = divs_splits['splits']['sid'].astype(int)
+    adjustment_writer.write(splits=divs_splits['splits'],
+                                dividends=divs_splits['divs'])
+    return
+
     first_available_day = bizdays[0]
     meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
     
-    mergers = pd.read_csv(join(meta_path,"mergers.csv"),parse_dates=True)
+    mergers = pd.read_csv(join(meta_path,"mergers.csv"),parse_dates=[0])
     mergers = mergers[mergers.symbol.isin(syms.symbol)]
     mergers['effective_date'] = pd.to_datetime(mergers['effective_date'])
     mergers['sid'] = [meta_dict.get(sym, -1) for sym in mergers['symbol'].tolist()]
-    mergers = mergers[mergers['effective_date']>first_available_day]
+    mergers = mergers[mergers['effective_date'] > first_available_day]
     mergers =mergers.drop(['symbol'],axis=1)
     mergers = mergers[mergers['sid'] != -1]
     
-    splits = pd.read_csv(join(meta_path,"splits.csv"),parse_dates=True)
+    splits = pd.read_csv(join(meta_path,"splits.csv"),parse_dates=[0])
     splits = splits[splits.symbol.isin(syms.symbol)]
     splits['effective_date'] = pd.to_datetime(splits['effective_date'])
     splits['sid'] = [meta_dict.get(sym, -1) for sym in splits['symbol'].tolist()]
-    splits = splits[splits['effective_date']>first_available_day]
+    splits = splits[splits['effective_date'] > first_available_day]
     splits =splits.drop(['symbol'],axis=1)
     splits = splits[splits['sid'] != -1]
     
-    dividends = pd.read_csv(join(meta_path,"dividends.csv"),parse_dates=True)
+    dividends = pd.read_csv(join(meta_path,"dividends.csv"),parse_dates=[0])
     dividends = dividends[dividends.symbol.isin(syms.symbol)]
     dividends['ex_date'] = pd.to_datetime(dividends['ex_date'])
     dividends['declared_date'] = pd.to_datetime(dividends['declared_date'])
     dividends['pay_date'] = pd.to_datetime(dividends['pay_date'])
     dividends['record_date'] = pd.to_datetime(dividends['record_date'])
     dividends['sid'] = [meta_dict.get(sym, -1) for sym in dividends['symbol'].tolist()]
-    dividends = dividends[dividends['ex_date']>first_available_day]
+    dividends = dividends[dividends['ex_date'] > first_available_day]
     dividends =dividends.drop(['symbol'],axis=1)
     dividends = dividends[dividends['sid'] != -1]
     
@@ -334,15 +375,16 @@ def _pricing_iter(csvdir, symbols, show_progress):
 
             yield sid, dfr
 
-def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
+def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays, 
                       exchange,save_daily_path):
-    dateparse = lambda x: datetime.strptime(x, '%d/%m/%Y').strftime('%Y-%m-%d')
+    dateparse = lambda x: datetime.strptime(x, '%Y%m%d').strftime('%Y-%m-%d')
     files = listdir(data_path)
     symbols = [f.split('.csv')[0] for f in files if f.endswith('.csv')]
     print("total tickers {}".format(len(symbols)))
     current_session = bizdays[-1]
     idx = calendar.minutes_for_sessions_in_range(current_session,current_session)
-    names_dict = dict(zip(syms['symbol'],syms['name']))
+    names_dict = dict(zip(syms['Ticker'],syms['Name']))
+    exchange_dict = dict(zip(syms['Ticker'],syms['Exchange']))
     
     try:
         meta_dict = meta_data['symbol'].to_dict()
@@ -351,6 +393,7 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
         meta_dict = {}
     
     for s in symbols:
+        #print(s)
         try:
             dfr = pd.read_csv(os.path.join(data_path, s+".csv"),converters={ 'Date': dateparse })
             dfr = fixup_minute_df(dfr, calendar)
@@ -358,16 +401,16 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
             dfr = get_equal_sized_df(dfr,idx)
             if(len(dfr)==0):
                 print("{} moves out?".format(s))
-                dfr = make_dummy_df(s,idx,save_daily_path)
-                if len(dfr) == 0:
-                    continue
-        except pd.io.common.EmptyDataError:
-            dfr = make_dummy_df(s,idx,save_daily_path)
-            if len(dfr) == 0:
+                #dfr = make_dummy_df(s,idx,ALGOSEEK_DAILY_PATH)
                 continue
+        except pd.io.common.EmptyDataError:
+            #print("carrying over last day prices for {}".format(s))
+            #dfr = make_dummy_df(s,idx,ALGOSEEK_DAILY_PATH)
+            continue
         
 #        s = ticker_cleanup(s)
 #        if not check_sym(s,syms):
+#            print("skip {}, not in allowed list".format(s))
 #            continue
 
         if s in meta_dict:
@@ -379,9 +422,10 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
                 meta_data.loc[sid,"auto_close_date"] = (current_session + Timedelta(days=1)).value
         else:
             sid = len(meta_data)
-            meta_data.loc[sid] = s, names_dict.get(s,s), current_session.value,current_session.value,(current_session + Timedelta(days=1)).value, exchange  
+            meta_data.loc[sid] = s, names_dict.get(s,s), current_session.value,current_session.value,(current_session + Timedelta(days=1)).value, exchange_dict.get(s,"")
         
         save_as_daily(join(save_daily_path,s+".csv"),dfr)
+
         yield sid, dfr
     
 
@@ -392,19 +436,21 @@ def fixup_minute_df(data, calendar):
     ticker_col = np.where(data.columns.to_series().str.lower().str.contains('ticker') == True)[0][0]
     dt_col = np.where(data.columns.to_series().str.lower().str.contains('date') == True)[0][0]
     time_col = np.where(data.columns.to_series().str.lower().str.contains('time') == True)[0][0]
-    oi_col = np.where(data.columns.to_series().str.lower().str.contains('open interest') == True)[0][0]
+    vwap_col = np.where(data.columns.to_series().str.lower().str.contains('volumeweightprice') == True)[0][0]
+    trade_col = np.where(data.columns.to_series().str.lower().str.contains('totaltrades') == True)[0][0]
     idx = pd.to_datetime(data.iloc[:,dt_col] + " " + data.iloc[:,time_col])
     data = data.set_index(idx)
     data.index = data.index.tz_localize(calendar.tz)
-    dropcols = [ticker_col,dt_col,time_col,oi_col]
+    dropcols = [dt_col,ticker_col,time_col,vwap_col,trade_col]
     data = data.drop(data.columns[dropcols],axis=1)
     data = data.rename(columns={
-            'Open': 'open', 
-            'High': 'high',
-            'Low': 'low',
-            'Close': 'close',
+            'FirstTradePrice': 'open', 
+            'HighTradePrice': 'high',
+            'LowTradePrice': 'low',
+            'LastTradePrice': 'close',
             'Volume': 'volume'
             })
+    data = data.sort_index().drop_duplicates()
     return data
 
 def get_equal_sized_df(dfr, idx):
@@ -418,8 +464,8 @@ def get_equal_sized_df(dfr, idx):
 
 def check_sym(s,syms):
     return True
-#    syms = syms['symbol'].tolist()
-#    return True if s in syms else False
+    #syms = syms['Ticker'].tolist()
+    #return True if s in syms else False
 
 
 def save_as_daily(strpath,df):
@@ -437,11 +483,9 @@ def save_as_daily(strpath,df):
         ddf = ddf.drop_duplicates()
     
     ddf.to_csv(strpath)
-    
+
 def make_dummy_df(sym, idx, datapath):
     fname = sym+".csv"
-    if not os.path.isfile(os.path.join(datapath,fname)):
-        return pd.DataFrame()
     dfr = pd.read_csv(os.path.join(datapath,fname),
                       parse_dates=[0],index_col=0).sort_index()
     dfr['volume'].iloc[-1] = 0
@@ -451,5 +495,5 @@ def make_dummy_df(sym, idx, datapath):
     dfr = base_dfr.fillna(method = "ffill")
     dfr = dfr.fillna(method = "bfill")
     dfr = dfr.dropna()
-    print("adding locf data from {}".format(sym))
     return dfr
+    
