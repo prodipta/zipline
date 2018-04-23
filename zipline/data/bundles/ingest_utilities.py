@@ -48,12 +48,17 @@ def get_ohlcv(dfr, ticker=None):
         dfr = dfr[ticker]
     return dfr.loc[:,['open','high','low','close','volume']]
 
-def split_csvs(dfr, strpath):
+def split_csvs(dfr, strpath, maps=None):
     cols = list(dfr.columns.values)
     #cols.remove('ticker')
     syms = set(dfr['ticker'].tolist())
     for s in syms:
         dfs = dfr.loc[dfr['ticker']==s,cols].set_index('date')
+        dfs.index = pd.to_datetime(dfs.index)
+        if maps is not None:
+            start_date = pd.to_datetime(maps.loc[maps.symbol==s,'start_date'].tolist())[-1]
+            end_date = pd.to_datetime(maps.loc[maps.symbol==s,'end_date'].tolist())[-1]
+            dfs = dfs[start_date:end_date]
         dfs = get_ohlcv(dfs)
         dfs.to_csv(os.path.join(strpath,s+".csv"))
         
@@ -66,18 +71,18 @@ def update_csvs(dfr,strpath):
         dfs = pd.concat([dfs_o,get_ohlcv(dfs_n)])
         dfs.to_csv(os.path.join(strpath,s+".csv"))
 
-def read_big_csv(strpath,tickers, pattern=""):
+def read_big_csv(strpath,tickers, pattern="", header = 0, ticker_col=0):
     items = os.listdir(strpath)
     files = [f for f in items if f.endswith(".csv") and pattern in f]
-
-    assert len(files)==1, (
-            "Expected only one csv file with historical data, "
-            "got {}.\n Files are {}\n"
-            "Do not know which one to read".format(len(files),files)
-            )
     
-    datafile = files[0]
-    reader = pd.read_csv(os.path.join(strpath,datafile), iterator=True, chunksize=1000)
-    dfr = pd.concat([chunk[chunk['ticker'].isin(tickers)] for chunk in reader])
+    ts = [os.stat(os.path.join(strpath,f)).st_mtime for f in files]
+    idx = ts.index(max(ts))
+    
+    datafile = files[idx]
+    print("reading {}".format(datafile))
+    reader = pd.read_csv(os.path.join(strpath,datafile), header=header, iterator=True, chunksize=1000)
+    dfr = pd.concat([chunk[chunk.iloc[:,ticker_col].isin(tickers)] for chunk in reader])
+    
     print("read total {} rows".format(len(dfr)))
+    
     return dfr

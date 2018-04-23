@@ -255,8 +255,8 @@ def algoseek_bundle(environ,
 
     minute_bar_writer = BcolzMinuteBarWriter(minute_bar_path,
                                              calendar,
-                                             start_session,
-                                             end_session,
+                                             calendar.all_sessions[0],
+                                             calendar.all_sessions[-1],
                                              minutes_per_day,
                                              benchmark_symbol)
     daily_bar_writer = BcolzDailyBarWriter(daily_bar_path,

@@ -4,8 +4,8 @@ Module for building a complete dataset from local directory with csv files.
 import os
 import sys
 from os.path import isfile, join
-import sqlalchemy as sa
 import pandas as pd
+import json
 
 from logbook import Logger, StreamHandler
 from pandas import read_csv, Timedelta
@@ -17,27 +17,12 @@ from zipline.assets import AssetDBWriter
 from zipline.data.minute_bars import BcolzMinuteBarWriter
 from zipline.data.us_equity_pricing import BcolzDailyBarWriter, SQLiteAdjustmentWriter, BcolzDailyBarReader
 from . import core as bundles
-from zipline.assets.asset_db_schema import asset_db_table_names
 
 handler = StreamHandler(sys.stdout, format_string=" | {record.message}")
 logger = Logger(__name__)
 logger.handlers.append(handler)
 
-XNSE_DATA_PATH = "C:/Users/academy.academy-72/Desktop/dev platform/data/XNSE/input"
-XNSE_META_PATH = "C:/Users/academy.academy-72/Desktop/dev platform/data/XNSE/meta"
-XNSE_BUNDLE_PATH = "C:/Users/academy.academy-72/Desktop/dev platform/data/XNSE/bundle"
-ASSET_DB = "assets-6.sqlite"
-ADJUSTMENT_DB = "adjustments.sqlite"
-XNSE_BIZDAYLIST = "bizdays.csv"
-XNSE_SYMLIST = "symbols.csv"
-XNSE_CALENDAR_NAME = "XNSE"
-XNSE_CALENDAR_TZ = "Etc/UTC"
-XNSE_SESSION_START = (9,15,59)
-XNSE_SESSION_END = (15,29,59)
-XNSE_MINUTES_PER_DAY = 375
-XNSE_BENCHMARK_SYM = 'NIFTY50'
-
-def xnse_equities(tframes=None, csvdir=XNSE_DATA_PATH):
+def xnse_equities(configpath=None):
     """
     Generate an ingest function for custom data bundle
     This function can be used in ~/.zipline/extension.py
@@ -72,7 +57,7 @@ def xnse_equities(tframes=None, csvdir=XNSE_DATA_PATH):
                 '/full/path/to/the/csvdir/directory'))
     """
 
-    return CSVDIRBundleXNSE(tframes, csvdir).ingest
+    return CSVDIRBundleXNSE(configpath).ingest
 
 
 class CSVDIRBundleXNSE:
@@ -80,31 +65,43 @@ class CSVDIRBundleXNSE:
     Wrapper class to call csvdir_bundle with provided
     list of time frames and a path to the csvdir directory
     """
-
-    def __init__(self, tframes=None, csvdir=None):
-        self.csvdir = csvdir
-        self.bundledir = XNSE_BUNDLE_PATH
-        self.metapath = XNSE_META_PATH
-        self.calendar = self._create_calendar(
-                XNSE_CALENDAR_NAME,
-                XNSE_CALENDAR_TZ,
-                XNSE_SESSION_START,
-                XNSE_SESSION_END,
-                self._read_bizdays(join(self.metapath,XNSE_BIZDAYLIST)))
-        self.minute_bar_path = join(XNSE_BUNDLE_PATH,"minute")
-        self.daily_bar_path = join(XNSE_BUNDLE_PATH,"daily")
-        self.asset_db_path = join(XNSE_BUNDLE_PATH,ASSET_DB)
-        self.adjustment_db_path = join(XNSE_BUNDLE_PATH,ADJUSTMENT_DB)
-        self.meta_data = self._read_asset_db()
-        self.syms = self._read_allowed_syms(join(self.metapath,XNSE_SYMLIST))
-    
-    def _read_allowed_syms(self, strpathmeta):
-        if not isfile(strpathmeta):
-            raise ValueError('Allow syms list is missing')
-        else:
-            syms = read_csv(strpathmeta)
+    def _read_config(self, configpath):
+        with open(configpath) as configfile:
+            config = json.load(configfile)
+            self.meta_path=config["META_PATH"]
+            self.bundle_path=config["BUNDLE_PATH"]
+            self.daily_path=config["DAILY_PATH"]
+            self.asset_db_name=config["ASSET_DB"]
+            self.adjustment_db_name=config["ADJUSTMENT_DB"]
+            self.metadata_file=config["META_DATA"]
+            self.bizdays_file=config["BIZDAYLIST"]
+            self.symlist_file=config["SYMLIST"]
+            self.benchmark_file=config["BENCHMARKDATA"]
+            self.benchmar_symbol=config["BENCHMARK_SYM"]
+            self.calendar_name=config["CALENDAR_NAME"]
+            self.calendar_tz=config["CALENDAR_TZ"]
+            self.cal_session_start=config["SESSION_START"]
+            self.cal_session_end=config["SESSION_END"]
+            self.cal_minutes_per_day=config["MINUTES_PER_DAY"]
         
-        return syms
+    def __init__(self, configpath=None):
+        self._read_config(configpath)
+        self.bizdays = self._read_bizdays(join(self.meta_path,self.bizdays_file))
+        self.calendar = self._create_calendar(
+                self.calendar_name,
+                self.calendar_tz,
+                tuple(self.cal_session_start),
+                tuple(self.cal_session_end),
+                self.bizdays)
+        self.minute_bar_path = join(self.bundle_path,"minute")
+        self.daily_bar_path = join(self.bundle_path,"daily")
+        self.asset_db_path = join(self.bundle_path,self.asset_db_name)
+        self.adjustment_db_path = join(self.bundle_path,self.adjustment_db_name)
+        self.meta_data = self._read_asset_db()
+        self.syms = self._read_allowed_syms()
+    
+    def _read_allowed_syms(self):        
+        return self.meta_data['symbol'].tolist()
     
     def _read_bizdays(self, strpathmeta):
         dts = []
@@ -114,32 +111,27 @@ class CSVDIRBundleXNSE:
             dts = read_csv(strpathmeta)
             #dts = dts['dates'].tolist()
             dts = pd.to_datetime(dts['dates']).tolist()
-        return list(set(dts))
+        return sorted(set(dts))
     
     def _create_calendar(self, cal_name,tz,session_start,session_end,dts):
         cal = ExchangeCalendarFromDate(cal_name,tz,session_start,session_end,dts)
         try:
-            deregister_calendar(XNSE_CALENDAR_NAME)
-            get_calendar(XNSE_CALENDAR_NAME)
+            deregister_calendar(self.calendar_name)
+            get_calendar(self.calendar_name)
         except:
-            register_calendar(XNSE_CALENDAR_NAME, cal)
-        return get_calendar(XNSE_CALENDAR_NAME)
+            register_calendar(self.calendar_name, cal)
+        return get_calendar(self.calendar_name)
     
-    def _read_asset_db(self):
-        meta_data = pd.DataFrame(columns=['symbol','asset_name','start_date',
-                                          'end_date','auto_close_date',
-                                          'exchange'])
-        
-        query = ("SELECT equity_symbol_mappings.symbol, equities.asset_name, "
-                     "equities.start_date, equities.end_date, equities.auto_close_date, "
-                     "equities.exchange from equities INNER JOIN equity_symbol_mappings "
-                     "ON equities.sid = equity_symbol_mappings.sid")
-        
-        engine = sa.create_engine('sqlite:///' + self.asset_db_path)
-        conn = engine.connect()
-        table_exists = all(engine.dialect.has_table(conn,t) for t in asset_db_table_names)
-        if table_exists:
-            meta_data = pd.read_sql_query(query, conn)
+    def _read_asset_db(self):        
+        if not isfile(join(self.meta_path,self.symlist_file)):
+            raise ValueError('symbols metadata list is missing')
+            
+        meta_data = pd.read_csv(join(self.meta_path,self.symlist_file))
+        meta_data.loc[len(meta_data)] = self.benchmar_symbol,self.benchmar_symbol,self.bizdays[0],self.bizdays[-1]
+        meta_data['start_date'] = pd.to_datetime(meta_data['start_date'])
+        meta_data['end_date'] = pd.to_datetime(meta_data['end_date'])
+        meta_data['auto_close_date'] = pd.to_datetime([e+pd.Timedelta(days=1) for e in meta_data['end_date'].tolist()])
+        meta_data['exchange'] = 'NSE'
         return(meta_data)
 
     def ingest(self,
@@ -156,11 +148,11 @@ class CSVDIRBundleXNSE:
                output_dir):
         
         self.calendar = self._create_calendar(
-                XNSE_CALENDAR_NAME,
-                XNSE_CALENDAR_TZ,
-                XNSE_SESSION_START,
-                XNSE_SESSION_END,
-                self._read_bizdays(join(self.metapath,XNSE_BIZDAYLIST)))
+                self.calendar_name,
+                self.calendar_tz,
+                self.cal_session_start,
+                self.cal_session_end,
+                self._read_bizdays(join(self.meta_path,self.bizdays_file)))
         
         xnse_bundle(environ,
                       asset_db_writer,
@@ -173,13 +165,17 @@ class CSVDIRBundleXNSE:
                       cache,
                       show_progress,
                       output_dir,
-                      self.csvdir,
+                      self.daily_path,
                       self.minute_bar_path,
                       self.daily_bar_path,
                       self.asset_db_path,
                       self.adjustment_db_path,
                       self.meta_data,
-                      self.syms)
+                      self.meta_path,
+                      self.syms,
+                      self.bizdays,
+                      self.cal_minutes_per_day,
+                      self.benchmar_symbol)
 
 
 @bundles.register("XNSE", create_writers=False)
@@ -200,7 +196,11 @@ def xnse_bundle(environ,
                   asset_db_path = None,
                   adjustment_db_path = None,
                   meta_data = None,
-                  syms = None):
+                  meta_path = None,
+                  syms = None,
+                  bizdays = None,
+                  minutes_per_day = None,
+                  benchmark_symbol = None):
     """
     Build a zipline data bundle from the directory with csv files.
     """
@@ -215,28 +215,21 @@ def xnse_bundle(environ,
                                              calendar,
                                              start_session,
                                              end_session,
-                                             XNSE_MINUTES_PER_DAY,
-                                             XNSE_BENCHMARK_SYM)
+                                             minutes_per_day,
+                                             benchmark_symbol)
     daily_bar_writer = BcolzDailyBarWriter(daily_bar_path,
                                              calendar,
                                              start_session,
                                              end_session)
     asset_db_writer = AssetDBWriter(asset_db_path)
     
-    
-    symbols = sorted(item.split('.csv')[0] 
-        for item in os.listdir(csvdir) if '.csv' in item)
-    
-    if not symbols:
-        raise ValueError("no <symbol>.csv* files found in %s" % csvdir)
-
-    
-    daily_bar_writer.write(_pricing_iter(csvdir, symbols, meta_data, syms,
+    daily_bar_writer.write(_pricing_iter(csvdir, syms, meta_data, bizdays,
                 show_progress),show_progress=show_progress)
 
 
     _write_meta_data(asset_db_writer,asset_db_path,meta_data)
-    _write_adjustment_data(adjustment_writer,adjustment_db_path,meta_data,syms,daily_bar_path,calendar.all_sessions)
+    _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
+                           calendar.all_sessions, bizdays, meta_path)
 
 def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
     try:
@@ -246,7 +239,8 @@ def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
 
     asset_db_writer.write(equities=meta_data)
     
-def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,cal_sessions):
+def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
+                           cal_sessions,bizdays, meta_path):
     try:
         os.remove(adjustment_db_path)
     except:
@@ -259,20 +253,17 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,cal_
     
     meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
     
-    mergers = pd.read_csv(join(XNSE_META_PATH,"mergers.csv"),parse_dates=True)
-    mergers = mergers[mergers.symbol.isin(syms.symbol)]
+    mergers = pd.read_csv(join(meta_path,"mergers.csv"),parse_dates=[0])
     mergers['effective_date'] = pd.to_datetime(mergers['effective_date'])
     mergers['sid'] = [meta_dict[sym] for sym in mergers['symbol'].tolist()]
     mergers =mergers.drop(['symbol'],axis=1)
     
-    splits = pd.read_csv(join(XNSE_META_PATH,"splits.csv"),parse_dates=True)
-    splits = splits[splits.symbol.isin(syms.symbol)]
+    splits = pd.read_csv(join(meta_path,"splits.csv"),parse_dates=[0])
     splits['effective_date'] = pd.to_datetime(splits['effective_date'])
     splits['sid'] = [meta_dict[sym] for sym in splits['symbol'].tolist()]
     splits =splits.drop(['symbol'],axis=1)
     
-    dividends = pd.read_csv(join(XNSE_META_PATH,"dividends.csv"),parse_dates=True)
-    dividends = dividends[dividends.symbol.isin(syms.symbol)]
+    dividends = pd.read_csv(join(meta_path,"dividends.csv"),parse_dates=[0])
     dividends['ex_date'] = pd.to_datetime(dividends['ex_date'])
     dividends['declared_date'] = pd.to_datetime(dividends['declared_date'])
     dividends['pay_date'] = pd.to_datetime(dividends['pay_date'])
@@ -286,48 +277,51 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,cal_
 
 
 
-def _pricing_iter(csvdir, symbols, meta_data, syms, show_progress):
+def _pricing_iter(csvdir, symbols, meta_data, bizdays, show_progress):
     with maybe_show_progress(symbols, show_progress,
                              label='Loading custom pricing data: ') as it:
         files = os.listdir(csvdir)
-        
-        names_dict = dict(zip(syms['symbol'],syms['name']))
-        try:
-            meta_dict = meta_data['symbol'].to_dict()
-            meta_dict = {s:i for i,s in meta_dict.iteritems()}
-        except:
-            meta_dict = {}
-        
-        for sid, s in enumerate(it):
-            logger.debug('%s: sid %s' % (s, sid))
+        for sid, symbol in enumerate(it):
+            logger.debug('%s: sid %s' % (symbol, sid))
 
             try:
                 fname = [fname for fname in files
-                         if '%s.csv' % s == fname][0]
+                         if '%s.csv' % symbol in fname][0]
             except IndexError:
-                raise ValueError("%s.csv file is not in %s" % (s, csvdir))
+                raise ValueError("%s.csv file is not in %s" % (symbol, csvdir))
 
             dfr = read_csv(os.path.join(csvdir, fname),
                            parse_dates=[0],
                            infer_datetime_format=True,
                            index_col=0).sort_index()
+            if len(dfr) == 0:
+                continue
+            start_date = pd.to_datetime(meta_data.loc[meta_data.symbol==symbol,'start_date'])
+            end_date = pd.to_datetime(meta_data.loc[meta_data.symbol==symbol,'end_date'])
+            dfr = ensure_all_days(dfr,start_date,end_date, bizdays)
+            if len(dfr) == 0:
+                continue
 
-            start_date = dfr.index[0]
-            end_date = dfr.index[-1]
-            
-            if s in meta_dict:
-                sid = meta_dict[s]
-                if meta_data.loc[sid,'start_date'] > start_date.value:
-                    meta_data.loc[sid,'start_date'] = start_date.value
-                if meta_data.loc[sid,"end_date"] < end_date.value:
-                    meta_data.loc[sid,"end_date"] = end_date.value
-                    meta_data.loc[sid,"auto_close_date"] = (end_date + Timedelta(days=1)).value
-            else:
-                sid = len(meta_data)
-                meta_data.loc[sid] = s, names_dict[s], start_date,end_date,(end_date + Timedelta(days=1)), "NSE"  
-            
             yield sid, dfr
 
-def check_sym(s,syms):
-    syms = syms['symbol'].tolist()
-    return True if s in syms else False
+def ensure_all_days(dfr, start_date, end_date, bizdays):
+    start_date = start_date.iloc[0]
+    end_date = end_date.iloc[0]
+    delta = end_date - start_date
+    dts = [(start_date + Timedelta(days=x)) for x in range(0, delta.days+1)]
+    dts = pd.to_datetime(dts)
+    bizdays = pd.to_datetime(bizdays)
+    idx = bizdays.intersection(dts)
+    if len(idx) == len(dfr):
+        return dfr
+    dfr = get_equal_sized_df(dfr,idx)
+    return dfr
+
+def get_equal_sized_df(dfr, idx):
+    base_dfr = pd.DataFrame(columns=['open','high','low','close','volume'],index = idx)
+    valid_idx = base_dfr.index.intersection(dfr.index)
+    base_dfr.loc[valid_idx] = dfr.loc[valid_idx]
+    dfr = base_dfr.fillna(method = "ffill")
+    dfr = dfr.fillna(method = "bfill")
+    dfr = dfr.dropna()
+    return dfr
