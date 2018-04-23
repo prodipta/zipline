@@ -360,5 +360,21 @@ class IngestLoop:
         self.ensure_benchmark(date)
         self.call_ingest()
 
-config_path = "C:/Users/academy.academy-72/Desktop/dev platform/data/XNSE/meta/config.json"
-ingest_loop = IngestLoop(config_path)
+#config_path = "C:/Users/academy.academy-72/Desktop/dev platform/data/XNSE/meta/config.json"
+#ingest_loop = IngestLoop(config_path)
+        
+def main():
+    assert len(sys.argv) == 4, (
+            'Usage: python {} <start_date>'
+            ' <end_date> <path_to_config>'.format(os.path.basename(__file__)))
+        
+    dt = pd.Timestamp(sys.argv[1],tz='Etc/UTC')
+    config_file = sys.argv[2]
+    update_codes = sys.argv[3]
+    
+    ingest_looper = IngestLoop(config_file)
+    ingest_looper.run(dt, update_codes)
+
+
+if __name__ == "__main__":
+    main()
