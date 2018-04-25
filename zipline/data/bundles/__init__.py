@@ -1,5 +1,5 @@
 # These imports are necessary to force module-scope register calls to happen.
-from . import quandl  # noqa
+from . import quandl_old  # noqa
 from . import csvdir  # noqa
 
 from .core import (

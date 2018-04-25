@@ -124,7 +124,7 @@ class IngestLoop:
             shutil.copyfile(os.path.join(self.meta_path,self.sym_directory,symfile),destfile)
         else:
             symbols = get_latest_symlist(date)
-            if symbols:
+            if not symbols.empty:
                 symfile = pd.to_datetime(date,format='%d%m%Y').date().strftime('%Y%m%d')+".csv"
                 symbols.to_csv(destfile, index=False)
                 symbols.to_csv(os.path.join(self.meta_path,self.sym_directory,symfile), index=False)

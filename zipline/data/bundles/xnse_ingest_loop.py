@@ -22,6 +22,7 @@ zp_path = "C:/Users/academy.academy-72/Documents/python/zipline/"
 sys.path.insert(0, zp_path)
 # TODO: End of hack part
 
+
 from zipline.data import bundles as bundles_module
 from zipline.data.bundles import register
 from zipline.data.bundles.XNSE import xnse_equities
@@ -96,6 +97,46 @@ def get_latest_symlist(url):
         raise IOError("failed to download the latest NIFTY500 membership")
     return syms['Symbol'].tolist()
 
+def update_ticker_change(membership_maps,tickers_list):
+    membership_maps['start_date'] = pd.to_datetime(membership_maps['start_date'])
+    membership_maps['end_date'] = pd.to_datetime(membership_maps['end_date'])
+    
+    if len(tickers_list) == 0:
+        return membership_maps
+    
+    old_tickers = tickers_list['old'].tolist()
+    new_tickers = tickers_list['new'].tolist()
+    new_names = tickers_list['name'].tolist()
+    ticker_maps = dict(zip(old_tickers,new_tickers))
+    names_maps = dict(zip(old_tickers,new_names))
+    
+    for t in old_tickers:
+        old_entry = membership_maps[membership_maps['symbol']==t]
+        new_entry = membership_maps[membership_maps['symbol']==ticker_maps[t]]
+        
+        if len(old_entry)==0:
+            continue
+        if len(old_entry)>1:
+            raise ValueError("Duplicate entries in membership maps")
+        update_idx = old_entry.index
+        membership_maps.loc[membership_maps['symbol']==t,'asset_name'] = names_maps[t]
+        membership_maps.loc[membership_maps['symbol']==t,'symbol'] = ticker_maps[t]
+        
+        if len(new_entry) ==0:
+            continue
+        if len(new_entry)>1:
+            raise ValueError("Duplicate entries in membership maps")
+        
+        remove_idx = new_entry.index
+        start_date = min(old_entry['start_date'].values,new_entry['start_date'].values)
+        end_date = max(old_entry['end_date'].values,new_entry['end_date'].values)
+        membership_maps.iloc[update_idx,2] = start_date
+        membership_maps.iloc[update_idx,3] = end_date
+        membership_maps.iloc[remove_idx] = np.nan
+        
+    membership_maps = membership_maps.dropna()
+    return membership_maps
+
 def download_data(url, api_key, strpath):
     try:
         r = requests.get(url+api_key, stream=True)
@@ -147,6 +188,7 @@ class IngestLoop:
             self.benchmark_sym = config['BENCHMARK_SYM']
             self.benchmark_download_sym = config['BENCHMARK_DOWNLOAD_SYM']
             self.code_file = config["QUANDLE_TICKER_MAP"]
+            self.ticker_change_file = config["TICKER_CHANGE_FILE"]
         self.ensure_codes()
         self.ensure_data()
         self.tickers = load_quandl_tickers(os.path.join(self.meta_path,config["QUANDLE_TICKER_MAP"]))
@@ -160,7 +202,7 @@ class IngestLoop:
         except:
             pass
         if dts:
-            return dts[-1]
+            return dts[-1].tz_localize(tz=self.calendar_tz)
         
         return None
         
@@ -199,6 +241,7 @@ class IngestLoop:
         
         benchmark = pd.read_csv(os.path.join(self.meta_path,self.benchmark_file),index_col=[0], parse_dates=[0])
         last_date = benchmark.index[-1]
+        last_date = last_date.tz_localize(tz=self.calendar_tz)
         if date > last_date:
             print("benchmark data stale, updating from {} to {}".format(last_date.strftime("%Y-%m-%d"),date.strftime("%Y-%m-%d")))
             increment = nsepy.get_history(symbol=self.benchmark_download_sym, start=last_date, end=date,index=True)
@@ -222,6 +265,7 @@ class IngestLoop:
     def ensure_latest_sym_list(self,date):        
         dts = [dt.split(".csv")[0].split("members_")[1] for dt in os.listdir(os.path.join(self.meta_path,self.sym_directory))]
         dts = pd.to_datetime(sorted(dts))
+        dts = dts.tz_localize(tz=self.calendar_tz)
         
         if date > dts[-1]:
             print("membership data stale, updating...")
@@ -273,12 +317,15 @@ class IngestLoop:
         if len(membership_maps) == 0:
             raise ValueError("empty membership data")
         
+        print("checking for ticker change")
+        tickers_list = pd.read_csv(os.path.join(self.meta_path,self.ticker_change_file))
+        membership_maps = update_ticker_change(membership_maps,tickers_list)
         print("updating membership complete")
         membership_maps.to_csv(os.path.join(self.meta_path,self.symlist_file),index=False)
         self.symlist = membership_maps
 
     def create_csvs(self, date):
-        clean_up(self.daily_path)
+        #clean_up(self.daily_path)
         colnames=['ticker','date','open','high','low','close',
                                     'volume','adj_factor','adj_type']
         print("reading data from disk...")
@@ -323,7 +370,7 @@ class IngestLoop:
         divs.columns = ['ex_date','symbol','amount']
         divs.ex_date = pd.to_datetime(divs.ex_date)
         divs['declared_date'] = [dts[max(0,dts.index(e)-1)] for e in list(divs.ex_date)]
-        divs['record_date'] = [dts[min(len(dts),dts.index(e)+2)] for e in list(divs.ex_date)]
+        divs['record_date'] = [dts[min(len(dts)-1,dts.index(e)+2)] for e in list(divs.ex_date)]
         divs['pay_date'] = divs['record_date']
         divs.declared_date = pd.to_datetime(divs.ex_date)
         divs.record_date = pd.to_datetime(divs.ex_date)
@@ -360,13 +407,13 @@ class IngestLoop:
         self.ensure_benchmark(date)
         self.call_ingest()
 
-#config_path = "C:/Users/academy.academy-72/Desktop/dev platform/data/XNSE/meta/config.json"
-#ingest_loop = IngestLoop(config_path)
+config_path = "C:/Users/academy.academy-72/Desktop/dev platform/data/XNSE/meta/config.json"
+ingest_loop = IngestLoop(config_path)
         
 def main():
     assert len(sys.argv) == 4, (
-            'Usage: python {} <start_date>'
-            ' <end_date> <path_to_config>'.format(os.path.basename(__file__)))
+            'Usage: python {} <date>'
+            ' <path_to_config> <code download flag>'.format(os.path.basename(__file__)))
         
     dt = pd.Timestamp(sys.argv[1],tz='Etc/UTC')
     config_file = sys.argv[2]
