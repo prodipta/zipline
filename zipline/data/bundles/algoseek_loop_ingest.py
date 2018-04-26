@@ -38,6 +38,7 @@ class IngestLoop:
             self.bizdays_file=config["BIZDAYLIST"]
             self.symlist_file=config["SYMLIST"]
             self.calendar_name=config["CALENDAR_NAME"]
+            self.sym_directory=config["SYM_DIRECTORY"]
     
     def update_benchmark(self):
         r = requests.get(
@@ -64,9 +65,12 @@ class IngestLoop:
         bizdays = pd.DataFrame(sorted(set(dts)),columns=['dates'])
         bizdays.to_csv(strpathmeta,index=False)
         
-    def manage_symlist(self, symbols):
+    def manage_symlist(self, symbols, date):
+        fname = 'symbols_'+date+'.csv'
+        
         if not os.path.isfile(os.path.join(self.meta_path,self.symlist_file)):
             pd.DataFrame(symbols,columns=['symbol']).to_csv(os.path.join(self.meta_path,self.symlist_file),index=False)
+            pd.DataFrame(symbols,columns=['symbol']).to_csv(os.path.join(self.meta_path,self.sym_directory,fname),index=False)
             return
         
         symlist = pd.read_csv(os.path.join(self.meta_path,self.symlist_file))
@@ -78,6 +82,7 @@ class IngestLoop:
             touch(s+".csv",self.data_path)
         symlist = list(set(symlist + symbols))
         pd.DataFrame(symlist,columns=['symbol']).to_csv(os.path.join(self.meta_path,self.symlist_file),index=False)
+        pd.DataFrame(symbols,columns=['symbol']).to_csv(os.path.join(self.meta_path,self.sym_directory,fname),index=False)
         
     def register_bundle(self, start_date, end_date):
         register(self.bundle_name, algoseek_minutedata(self.config_path),calendar_name=self.calendar_name,
@@ -106,7 +111,7 @@ class IngestLoop:
                     unzip_to_directory(full_fname, self.data_path)
                     sfiles = os.listdir(self.data_path)
                     symbols = [s.split('.csv')[0] for s in sfiles if s.endswith('.csv')]
-                    self.manage_symlist(symbols)
+                    self.manage_symlist(symbols, dt)
                     print("calling ingest function...")
                     self.call_ingest(start_date,end_date)
                     print("done, cleaning up...")
