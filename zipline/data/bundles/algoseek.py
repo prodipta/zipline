@@ -401,11 +401,11 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
             dfr = get_equal_sized_df(dfr,idx)
             if(len(dfr)==0):
                 print("{} moves out?".format(s))
-                #dfr = make_dummy_df(s,idx,ALGOSEEK_DAILY_PATH)
+                #dfr = make_dummy_df(s,idx,save_daily_path)
                 continue
         except pd.io.common.EmptyDataError:
-            #print("carrying over last day prices for {}".format(s))
-            #dfr = make_dummy_df(s,idx,ALGOSEEK_DAILY_PATH)
+            print("carrying over last day prices for {}".format(s))
+            dfr = make_dummy_df(s,idx,save_daily_path)
             continue
         
 #        s = ticker_cleanup(s)
@@ -486,8 +486,11 @@ def save_as_daily(strpath,df):
 
 def make_dummy_df(sym, idx, datapath):
     fname = sym+".csv"
-    dfr = pd.read_csv(os.path.join(datapath,fname),
+    try:
+        dfr = pd.read_csv(os.path.join(datapath,fname),
                       parse_dates=[0],index_col=0).sort_index()
+    except:
+        raise ValueError('File not found to make carried-over dataframe')
     dfr['volume'].iloc[-1] = 0
     backdata = tuple(dfr.iloc[-1,:])
     base_dfr = pd.DataFrame(columns=['open','high','low','close','volume'],index = idx)

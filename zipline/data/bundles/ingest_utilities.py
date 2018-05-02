@@ -11,6 +11,7 @@ import zipfile
 import shutil
 import requests
 from bs4 import BeautifulSoup
+import bisect
 
 def touch(fname, fpath, times=None):
     with open(os.path.join(fpath,fname), 'a'):
@@ -138,4 +139,15 @@ def download_spx_changes(wiki_url):
     tabs = tabs.sort_values('date')
     return {"tickers": tickers, "change":tabs}
 
-    
+def find_interval(x, lst):
+    try:
+        idx = lst.index(x)
+    except:
+        idx = max(0,bisect.bisect_left(lst,x)-1)
+    return idx
+
+def upsert_pandas(dfr, sym_col, sym, date_col, date, names_dict):
+    if sym in dfr[sym_col].tolist():
+        dfr.loc[dfr[sym_col]==sym,date_col] = date.strftime("%Y-%m-%d")
+    else:
+        dfr.loc[len(dfr),:] = sym,names_dict.get(sym,sym),date.strftime("%Y-%m-%d"),date.strftime("%Y-%m-%d")

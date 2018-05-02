@@ -18,7 +18,7 @@ sys.path.insert(0, zp_path)
 
 from zipline.data.bundles import register
 from zipline.data.bundles.algoseek import algoseek_minutedata
-from zipline.data.bundles.ingest_utilities import touch, unzip_to_directory, clean_up
+from zipline.data.bundles.ingest_utilities import touch, unzip_to_directory, clean_up, download_spx_changes
 
 from zipline.data import bundles as bundles_module
 
@@ -39,6 +39,8 @@ class IngestLoop:
             self.symlist_file=config["SYMLIST"]
             self.calendar_name=config["CALENDAR_NAME"]
             self.sym_directory=config["SYM_DIRECTORY"]
+            self.wiki_url=config["WIKI_URL"]
+            self.spx_data = download_spx_changes(self.wiki_url)
     
     def update_benchmark(self):
         r = requests.get(
@@ -65,6 +67,23 @@ class IngestLoop:
         bizdays = pd.DataFrame(sorted(set(dts)),columns=['dates'])
         bizdays.to_csv(strpathmeta,index=False)
         
+    def _validate_dropouts(self, syms, spx_changes):
+        if not syms:
+            return True
+        
+        if not spx_changes:
+            spx_changes = download_spx_changes(self.wiki_url)
+            
+        current_sym_list = spx_changes['tickers']['symbol'].tolist()
+        deleted_sym_list = spx_changes['tickers']['delete'].tolist()
+        added_sym_list = spx_changes['tickers']['add'].tolist()
+        
+        validation_exists = [True if s in current_sym_list else False for s in syms]
+        validation_added = [True if s in added_sym_list else False for s in syms]
+        validation_deleted = [False if s in deleted_sym_list else True for s in syms]
+        
+        return validation_exists or validation_added or validation_deleted
+    
     def manage_symlist(self, symbols, date):
         fname = 'symbols_'+date+'.csv'
         
@@ -78,9 +97,13 @@ class IngestLoop:
         print("extra symbols {}".format([s for s in symbols if s not in symlist]))
         missing_syms = [s for s in symlist if s not in symbols]
         print("missing symbols {}".format(missing_syms))
-        for s in missing_syms:
-            touch(s+".csv",self.data_path)
-        symlist = list(set(symlist + symbols))
+        validated_syms = self._validate_dropouts(missing_syms,self.spx_data)
+        for i, s in enumerate(missing_syms):
+            if validated_syms[i]:
+                touch(s+".csv",self.data_path)
+                symbols.append(s)
+        
+        symlist = symbols
         pd.DataFrame(symlist,columns=['symbol']).to_csv(os.path.join(self.meta_path,self.symlist_file),index=False)
         pd.DataFrame(symbols,columns=['symbol']).to_csv(os.path.join(self.meta_path,self.sym_directory,fname),index=False)
         

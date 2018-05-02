@@ -12,7 +12,6 @@ import quandl
 import json
 import sys
 import re
-import bisect
 import requests
 from StringIO import StringIO
 import nsepy
@@ -26,20 +25,7 @@ sys.path.insert(0, zp_path)
 from zipline.data import bundles as bundles_module
 from zipline.data.bundles import register
 from zipline.data.bundles.XNSE import xnse_equities
-from zipline.data.bundles.ingest_utilities import read_big_csv,split_csvs,unzip_to_directory,clean_up,get_ohlcv
-
-def find_interval(x, lst):
-    try:
-        idx = lst.index(x)
-    except:
-        idx = max(0,bisect.bisect_left(lst,x)-1)
-    return idx
-
-def upsert_pandas(dfr, sym_col, sym, date_col, date, names_dict):
-    if sym in dfr[sym_col].tolist():
-        dfr.loc[dfr[sym_col]==sym,date_col] = date.strftime("%Y-%m-%d")
-    else:
-        dfr.loc[len(dfr),:] = sym,names_dict.get(sym,sym),date.strftime("%Y-%m-%d"),date.strftime("%Y-%m-%d")
+from zipline.data.bundles.ingest_utilities import read_big_csv,split_csvs,unzip_to_directory,clean_up,get_ohlcv, find_interval, upsert_pandas
 
 def subset_adjustment(dfr, meta_data):
     meta_data['start_date'] = pd.to_datetime(meta_data['start_date'])
