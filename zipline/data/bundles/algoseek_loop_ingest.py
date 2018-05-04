@@ -129,7 +129,7 @@ class IngestLoop:
         
     def register_bundle(self, start_date, end_date):
         register(self.bundle_name, algoseek_minutedata(self.config_path),calendar_name=self.calendar_name,
-                 start_session=start_date,end_session=end_date,
+                 start_session=None,end_session=None,
                  create_writers=False)
     
     def call_ingest(self, start_date, end_date):

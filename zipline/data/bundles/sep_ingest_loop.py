@@ -116,6 +116,10 @@ class IngestLoop:
         
         print("checking for ticker change")
         
+        syms = membership_maps['symbol'].tolist()
+        names = membership_maps['asset_name'].tolist()
+        tickers_mismatch = [t for i, t in enumerate(syms) if t == names[i]]
+        
         ticker_change = {"old":self.tickers['relatedtickers'].tolist(),"new":self.tickers['ticker'].tolist(),"name":self.tickers['name'].tolist()}
         ticker_change = pd.DataFrame(ticker_change,columns=['old','new','name'])
         ticker_change = ticker_change.dropna()
@@ -123,6 +127,7 @@ class IngestLoop:
         tickers_list = pd.read_csv(os.path.join(self.meta_path,self.ticker_change_file))
         tickers_list = pd.concat([tickers_list,ticker_change])
         tickers_list = tickers_list[~tickers_list.old.duplicated(keep='last')]
+        tickers_list = tickers_list[tickers_list.old.isin(tickers_mismatch)]
         membership_maps = update_ticker_change(membership_maps,tickers_list)
         
         print("updating membership complete")
