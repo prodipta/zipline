@@ -310,33 +310,27 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
                                                cal_sessions,
                                                overwrite=True)
     
-    divs_splits = {'divs': pd.DataFrame(columns=['sid', 'amount',
-                                              'ex_date', 'record_date',
-                                              'declared_date', 'pay_date']),
-                   'splits': pd.DataFrame(columns=['sid', 'ratio',
-                                                'effective_date'])}
-    divs_splits['divs']['sid'] = divs_splits['divs']['sid'].astype(int)
-    divs_splits['splits']['sid'] = divs_splits['splits']['sid'].astype(int)
-    adjustment_writer.write(splits=divs_splits['splits'],
-                                dividends=divs_splits['divs'])
-    return
+#    divs_splits = {'divs': pd.DataFrame(columns=['sid', 'amount',
+#                                              'ex_date', 'record_date',
+#                                              'declared_date', 'pay_date']),
+#                   'splits': pd.DataFrame(columns=['sid', 'ratio',
+#                                                'effective_date'])}
+#    divs_splits['divs']['sid'] = divs_splits['divs']['sid'].astype(int)
+#    divs_splits['splits']['sid'] = divs_splits['splits']['sid'].astype(int)
+#    adjustment_writer.write(splits=divs_splits['splits'],
+#                                dividends=divs_splits['divs'])
+#    return
 
     first_available_day = bizdays[0]
+    last_available_day = bizdays[-1]
     meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
-    
-    mergers = pd.read_csv(join(meta_path,"mergers.csv"),parse_dates=[0])
-    mergers = mergers[mergers.symbol.isin(syms.symbol)]
-    mergers['effective_date'] = pd.to_datetime(mergers['effective_date'])
-    mergers['sid'] = [meta_dict.get(sym, -1) for sym in mergers['symbol'].tolist()]
-    mergers = mergers[mergers['effective_date'] > first_available_day]
-    mergers =mergers.drop(['symbol'],axis=1)
-    mergers = mergers[mergers['sid'] != -1]
     
     splits = pd.read_csv(join(meta_path,"splits.csv"),parse_dates=[0])
     splits = splits[splits.symbol.isin(syms.symbol)]
     splits['effective_date'] = pd.to_datetime(splits['effective_date'])
     splits['sid'] = [meta_dict.get(sym, -1) for sym in splits['symbol'].tolist()]
     splits = splits[splits['effective_date'] > first_available_day]
+    splits = splits[splits['effective_date'] <= last_available_day]
     splits =splits.drop(['symbol'],axis=1)
     splits = splits[splits['sid'] != -1]
     
@@ -348,11 +342,11 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     dividends['record_date'] = pd.to_datetime(dividends['record_date'])
     dividends['sid'] = [meta_dict.get(sym, -1) for sym in dividends['symbol'].tolist()]
     dividends = dividends[dividends['ex_date'] > first_available_day]
+    dividends = dividends[dividends['ex_date'] <= last_available_day]
     dividends =dividends.drop(['symbol'],axis=1)
     dividends = dividends[dividends['sid'] != -1]
     
     adjustment_writer.write(splits=splits,
-                            mergers=mergers,
                             dividends=dividends)
 
 def _pricing_iter(csvdir, symbols, show_progress):

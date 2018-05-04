@@ -43,6 +43,13 @@ class IngestLoop:
             self.spx_data = download_spx_changes(self.wiki_url)
     
     def update_benchmark(self):
+        if not os.path.isfile(os.path.join(self.meta_path, self.benchmark_file)):
+            raise IOError("Benchmark file is missing")
+        
+        df0 = pd.read_csv(os.path.join(self.meta_path,
+                                       self.benchmark_file),parse_dates=[0],index_col=0).sort_index()
+        df0 = df0.dropna()
+        
         r = requests.get(
         'https://api.iextrading.com/1.0/stock/{}/chart/5y'.format(self.benchmar_symbol)
         )
@@ -50,12 +57,12 @@ class IngestLoop:
         df1 = pd.DataFrame(data)
         df1.index = pd.DatetimeIndex(df1['date'])
         df1 = df1[['open','high','low','close','volume']]
-        df0 = pd.read_csv(os.path.join(self.meta_path,
-                                       self.benchmark_file),parse_dates=[0],index_col=0).sort_index()
+        df1 = df1.sort_index()
+        
         df = pd.concat([df0,df1])
         df = df[~df.index.duplicated(keep='last')]
         df.to_csv(os.path.join(self.meta_path,self.benchmark_file),
-                  index_label = True)
+                  index_label = 'date')
 
     def update_bizdays(self, strdate):
         strpathmeta = os.path.join(self.meta_path,self.bizdays_file)
@@ -67,7 +74,7 @@ class IngestLoop:
         bizdays = pd.DataFrame(sorted(set(dts)),columns=['dates'])
         bizdays.to_csv(strpathmeta,index=False)
         
-    def _validate_dropouts(self, syms, spx_changes):
+    def _validate_dropouts(self, syms, spx_changes, cutoff=10):
         if not syms:
             return True
         
@@ -75,14 +82,18 @@ class IngestLoop:
             spx_changes = download_spx_changes(self.wiki_url)
             
         current_sym_list = spx_changes['tickers']['symbol'].tolist()
-        deleted_sym_list = spx_changes['tickers']['delete'].tolist()
-        added_sym_list = spx_changes['tickers']['add'].tolist()
+        deleted_sym_list = spx_changes['change']['delete'].tolist()
+        added_sym_list = spx_changes['change']['add'].tolist()
         
         validation_exists = [True if s in current_sym_list else False for s in syms]
         validation_added = [True if s in added_sym_list else False for s in syms]
         validation_deleted = [False if s in deleted_sym_list else True for s in syms]
         
-        return validation_exists or validation_added or validation_deleted
+        if len(syms) > cutoff:
+            validation_results = [validation_exists[i] or validation_added[i] or validation_deleted[3] for i,e in enumerate(syms)]
+        else:
+            validation_results = [validation_exists[i] or validation_added[i] for i,e in enumerate(syms)]
+        return validation_results
     
     def manage_symlist(self, symbols, date):
         fname = 'symbols_'+date+'.csv'
@@ -94,14 +105,23 @@ class IngestLoop:
         
         symlist = pd.read_csv(os.path.join(self.meta_path,self.symlist_file))
         symlist = symlist['symbol'].tolist()
-        print("extra symbols {}".format([s for s in symbols if s not in symlist]))
+        extra_syms = [s for s in symbols if s not in symlist]
+        print("extra symbols {}".format(extra_syms))
         missing_syms = [s for s in symlist if s not in symbols]
         print("missing symbols {}".format(missing_syms))
-        validated_syms = self._validate_dropouts(missing_syms,self.spx_data)
-        for i, s in enumerate(missing_syms):
-            if validated_syms[i]:
-                touch(s+".csv",self.data_path)
-                symbols.append(s)
+        
+        if missing_syms and len(missing_syms) - len(extra_syms) > 1:
+            spx_tickers = self.spx_data['tickers']
+            change_data = self.spx_data['change']
+            change_data = change_data[change_data['date'] <= pd.to_datetime(date)+pd.Timedelta(days=30)]
+            spx_data = {"tickers":spx_tickers , "change":change_data}
+            validated_syms = self._validate_dropouts(missing_syms,spx_data)
+            #print(dict(zip(missing_syms,validated_syms)))
+            print("validattion {}".format(validated_syms))
+            for i, s in enumerate(missing_syms):
+                if validated_syms[i]:
+                    touch(s+".csv",self.data_path)
+                    symbols.append(s)
         
         symlist = symbols
         pd.DataFrame(symlist,columns=['symbol']).to_csv(os.path.join(self.meta_path,self.symlist_file),index=False)

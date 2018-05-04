@@ -281,13 +281,15 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
                                                overwrite=True)
     
     first_available_day = bizdays[0]
+    last_available_day = bizdays[-1]
     meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
     
     mergers = pd.read_csv(join(meta_path,"mergers.csv"),parse_dates=True)
     mergers = mergers[mergers.symbol.isin(syms.symbol)]
     mergers['effective_date'] = pd.to_datetime(mergers['effective_date'])
     mergers['sid'] = [meta_dict.get(sym, -1) for sym in mergers['symbol'].tolist()]
-    mergers = mergers[mergers['effective_date']>first_available_day]
+    mergers = mergers[mergers['effective_date'] > first_available_day]
+    mergers = mergers[mergers['effective_date'] <= last_available_day]
     mergers =mergers.drop(['symbol'],axis=1)
     mergers = mergers[mergers['sid'] != -1]
     
@@ -296,6 +298,7 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     splits['effective_date'] = pd.to_datetime(splits['effective_date'])
     splits['sid'] = [meta_dict.get(sym, -1) for sym in splits['symbol'].tolist()]
     splits = splits[splits['effective_date']>first_available_day]
+    splits = splits[splits['effective_date'] <= last_available_day]
     splits =splits.drop(['symbol'],axis=1)
     splits = splits[splits['sid'] != -1]
     
@@ -307,6 +310,7 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     dividends['record_date'] = pd.to_datetime(dividends['record_date'])
     dividends['sid'] = [meta_dict.get(sym, -1) for sym in dividends['symbol'].tolist()]
     dividends = dividends[dividends['ex_date']>first_available_day]
+    dividends = dividends[dividends['ex_date'] <= last_available_day]
     dividends =dividends.drop(['symbol'],axis=1)
     dividends = dividends[dividends['sid'] != -1]
     

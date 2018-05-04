@@ -16,6 +16,7 @@ from zipline.utils.calendars import ExchangeCalendarFromDate
 from zipline.assets import AssetDBWriter
 from zipline.data.minute_bars import BcolzMinuteBarWriter
 from zipline.data.us_equity_pricing import BcolzDailyBarWriter, SQLiteAdjustmentWriter, BcolzDailyBarReader
+from zipline.data.bundles.ingest_utilities import get_ohlcv
 from . import core as bundles
 
 handler = StreamHandler(sys.stdout, format_string=" | {record.message}")
@@ -253,11 +254,6 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     
     meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
     
-    mergers = pd.read_csv(join(meta_path,"mergers.csv"),parse_dates=[0])
-    mergers['effective_date'] = pd.to_datetime(mergers['effective_date'])
-    mergers['sid'] = [meta_dict[sym] for sym in mergers['symbol'].tolist()]
-    mergers =mergers.drop(['symbol'],axis=1)
-    
     splits = pd.read_csv(join(meta_path,"splits.csv"),parse_dates=[0])
     splits['effective_date'] = pd.to_datetime(splits['effective_date'])
     splits['sid'] = [meta_dict[sym] for sym in splits['symbol'].tolist()]
@@ -272,7 +268,6 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     dividends =dividends.drop(['symbol'],axis=1)
     
     adjustment_writer.write(splits=splits,
-                            mergers=mergers,
                             dividends=dividends)
 
 
@@ -294,8 +289,11 @@ def _pricing_iter(csvdir, symbols, meta_data, bizdays, show_progress):
                            parse_dates=[0],
                            infer_datetime_format=True,
                            index_col=0).sort_index()
+            
             if len(dfr) == 0:
                 continue
+            
+            dfr = get_ohlcv(dfr)
             start_date = pd.to_datetime(meta_data.loc[meta_data.symbol==symbol,'start_date'])
             end_date = pd.to_datetime(meta_data.loc[meta_data.symbol==symbol,'end_date'])
             dfr = ensure_all_days(dfr,start_date,end_date, bizdays)

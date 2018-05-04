@@ -25,7 +25,7 @@ sys.path.insert(0, zp_path)
 from zipline.data import bundles as bundles_module
 from zipline.data.bundles import register
 from zipline.data.bundles.XNSE import xnse_equities
-from zipline.data.bundles.ingest_utilities import read_big_csv,split_csvs,unzip_to_directory,clean_up,get_ohlcv, find_interval, upsert_pandas
+from zipline.data.bundles.ingest_utilities import read_big_csv,split_csvs,unzip_to_directory,clean_up,get_ohlcv, find_interval, upsert_pandas, update_ticker_change, if_csvs_in_dir, ensure_data_between_dates
 
 def subset_adjustment(dfr, meta_data):
     meta_data['start_date'] = pd.to_datetime(meta_data['start_date'])
@@ -82,46 +82,6 @@ def get_latest_symlist(url):
     except:
         raise IOError("failed to download the latest NIFTY500 membership")
     return syms['Symbol'].tolist()
-
-def update_ticker_change(membership_maps,tickers_list):
-    membership_maps['start_date'] = pd.to_datetime(membership_maps['start_date'])
-    membership_maps['end_date'] = pd.to_datetime(membership_maps['end_date'])
-    
-    if len(tickers_list) == 0:
-        return membership_maps
-    
-    old_tickers = tickers_list['old'].tolist()
-    new_tickers = tickers_list['new'].tolist()
-    new_names = tickers_list['name'].tolist()
-    ticker_maps = dict(zip(old_tickers,new_tickers))
-    names_maps = dict(zip(old_tickers,new_names))
-    
-    for t in old_tickers:
-        old_entry = membership_maps[membership_maps['symbol']==t]
-        new_entry = membership_maps[membership_maps['symbol']==ticker_maps[t]]
-        
-        if len(old_entry)==0:
-            continue
-        if len(old_entry)>1:
-            raise ValueError("Duplicate entries in membership maps")
-        update_idx = old_entry.index
-        membership_maps.loc[membership_maps['symbol']==t,'asset_name'] = names_maps[t]
-        membership_maps.loc[membership_maps['symbol']==t,'symbol'] = ticker_maps[t]
-        
-        if len(new_entry) ==0:
-            continue
-        if len(new_entry)>1:
-            raise ValueError("Duplicate entries in membership maps")
-        
-        remove_idx = new_entry.index
-        start_date = min(old_entry['start_date'].values,new_entry['start_date'].values)
-        end_date = max(old_entry['end_date'].values,new_entry['end_date'].values)
-        membership_maps.iloc[update_idx,2] = start_date
-        membership_maps.iloc[update_idx,3] = end_date
-        membership_maps.iloc[remove_idx] = np.nan
-        
-    membership_maps = membership_maps.dropna()
-    return membership_maps
 
 def download_data(url, api_key, strpath):
     try:
@@ -331,6 +291,31 @@ class IngestLoop:
         self.make_adjustments_maps(dfr)
         print("adjustment data creation complete.")
         
+    def ensure_data_range(self):
+        if not if_csvs_in_dir(self.daily_path):
+            raise IOError("csv data files are not available")
+            
+        files = [s for s in os.listdir(self.daily_path) if s.endswith(".csv")]
+        
+        for f in files:
+            sym = f.split('.csv')[0]
+            if sym == self.benchmar_symbol:
+                continue
+            start_date = self.symlist.start_date[self.symlist.symbol==sym].tolist()[0]
+            end_date = self.symlist.end_date[self.symlist.symbol==sym].tolist()[0]
+            ensure_data_between_dates(os.path.join(self.daily_path,f),
+                                      start_date, end_date)
+            
+    def update_membership_maps(self):
+        if not if_csvs_in_dir(self.daily_path):
+            raise IOError("csv data files are not available")
+            
+        syms = [s.split(".csv")[0] for s in os.listdir(self.daily_path) if s.endswith(".csv")]
+        membership_maps = self.symlist
+        membership_maps = membership_maps[membership_maps.symbol.isin(syms)]
+        self.symlist = membership_maps
+        membership_maps.to_csv(os.path.join(self.meta_path,self.symlist_file),index=False)
+    
     def make_adjustments_maps(self,dfr):
         dts = list(self.get_bizdays())
         meta_data = pd.read_csv(os.path.join(self.meta_path,self.symlist_file))
@@ -393,8 +378,8 @@ class IngestLoop:
         self.ensure_benchmark(date)
         self.call_ingest()
 
-config_path = "C:/Users/academy.academy-72/Desktop/dev platform/data/XNSE/meta/config.json"
-ingest_loop = IngestLoop(config_path)
+#config_path = "C:/Users/academy.academy-72/Desktop/dev platform/data/XNSE/meta/config.json"
+#ingest_loop = IngestLoop(config_path)
         
 def main():
     assert len(sys.argv) == 4, (
