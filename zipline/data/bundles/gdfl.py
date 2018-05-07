@@ -364,11 +364,11 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
                 print("{} moves out?".format(s))
                 dfr = make_dummy_df(s,idx,save_daily_path)
                 if len(dfr) == 0:
-                    continue
+                    raise ValueError('failed to carry over last data for {}'.format(s))
         except pd.io.common.EmptyDataError:
             dfr = make_dummy_df(s,idx,save_daily_path)
             if len(dfr) == 0:
-                continue
+                raise ValueError('failed to carry over last data for {}'.format(s))
         
 #        s = ticker_cleanup(s)
 #        if not check_sym(s,syms):
@@ -432,13 +432,13 @@ def save_as_daily(strpath,df):
                'low': 'min', 
                'close': 'last',
                'volume':'sum'})
-    
+    df = df[['open','high','low','close','volume']]
     if not isfile(strpath):
         ddf = df
     else:
         ddf = read_csv(strpath, index_col=0, parse_dates = True).sort_index()
         ddf = ddf.append(df)
-        ddf = ddf.drop_duplicates()
+        ddf = ddf[~ddf.index.duplicated(keep='last')]
     
     ddf.to_csv(strpath)
     

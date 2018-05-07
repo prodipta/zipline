@@ -469,12 +469,13 @@ def save_as_daily(strpath,df):
                'close': 'last',
                'volume':'sum'})
     
+    df = df[['open','high','low','close','volume']]
     if not isfile(strpath):
         ddf = df
     else:
         ddf = read_csv(strpath, index_col=0, parse_dates = True).sort_index()
         ddf = ddf.append(df)
-        ddf = ddf.drop_duplicates()
+        ddf = ddf[~ddf.index.duplicated(keep='last')]
     
     ddf.to_csv(strpath)
 
