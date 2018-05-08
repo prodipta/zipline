@@ -368,7 +368,8 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
         except pd.io.common.EmptyDataError:
             dfr = make_dummy_df(s,idx,save_daily_path)
             if len(dfr) == 0:
-                raise ValueError('failed to carry over last data for {}'.format(s))
+                print('failed to carry over last data for {}'.format(s))
+                continue
         
 #        s = ticker_cleanup(s)
 #        if not check_sym(s,syms):
