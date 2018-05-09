@@ -22,6 +22,7 @@ test.log
 
 # Compiled python files
 *.py[co]
+*.pyd
 
 # Packages
 *.egg
@@ -67,6 +68,7 @@ benchmarks.db
 # Intellij IDE temp project files
 .project
 zipline.iml
+.spyproject/*
 
 # PyCharm custom settings
 .idea
