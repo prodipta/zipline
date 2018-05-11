@@ -1342,12 +1342,12 @@ class TradingAlgorithm(object):
 
         if normalized_date < asset.start_date:
             raise CannotOrderDelistedAsset(
-                msg="Cannot order {0}, as it started trading on"
+                msg="Cannot order {0}, as it entered benchmark on"
                     " {1}.".format(asset.symbol, asset.start_date)
             )
         elif normalized_date > asset.end_date:
             raise CannotOrderDelistedAsset(
-                msg="Cannot order {0}, as it stopped trading on"
+                msg="Cannot order {0}, as it left the benchmark on"
                     " {1}.".format(asset.symbol, asset.end_date)
             )
         else:

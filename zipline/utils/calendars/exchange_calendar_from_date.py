@@ -27,7 +27,10 @@ class ExchangeCalendarFromDate(TradingCalendar):
         holidays = list(set(dates_list) - set(dts))
         holidays = sorted(holidays)
         self._holidays = holidays
-        super(ExchangeCalendarFromDate, self).__init__()
+        start_date = pd.Timestamp(start_date, tz='UTC')
+        end_base = pd.Timestamp('today', tz='UTC')
+        end_date = end_base + pd.Timedelta(days=365)
+        super(ExchangeCalendarFromDate, self).__init__(start=start_date, end=end_date)
         
     @property
     def name(self):

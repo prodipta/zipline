@@ -395,14 +395,15 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
             dfr = get_equal_sized_df(dfr,idx)
             if(len(dfr)==0):
                 print("{} moves out?".format(s))
-                #dfr = make_dummy_df(s,idx,save_daily_path)
-                continue
+                dfr = make_dummy_df(s,idx,save_daily_path)
+                
         except pd.io.common.EmptyDataError:
             print("carrying over last day prices for {}".format(s))
             dfr = make_dummy_df(s,idx,save_daily_path)
-            if len(dfr) == 0:
-                print('failed to carry over last data for {}'.format(s))
-                continue
+            
+        if len(dfr) == 0:
+            print('failed to carry over last data for {}'.format(s))
+            continue
         
 #        s = ticker_cleanup(s)
 #        if not check_sym(s,syms):
