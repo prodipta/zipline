@@ -285,6 +285,9 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
     
     mergers = pd.read_csv(join(meta_path,"mergers.csv"),parse_dates=True)
+    mergers_fno = mergers.copy()
+    mergers_fno.symbol = mergers.symbol+'-I'
+    mergers = pd.concat([mergers,mergers_fno])
     mergers = mergers[mergers.symbol.isin(syms.symbol)]
     mergers['effective_date'] = pd.to_datetime(mergers['effective_date'])
     mergers['sid'] = [meta_dict.get(sym, -1) for sym in mergers['symbol'].tolist()]
@@ -294,6 +297,9 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     mergers = mergers[mergers['sid'] != -1]
     
     splits = pd.read_csv(join(meta_path,"splits.csv"),parse_dates=True)
+    splits_fno = splits.copy()
+    splits_fno.symbol = splits_fno.symbol+'-I'
+    splits = pd.concat([splits,splits_fno])
     splits = splits[splits.symbol.isin(syms.symbol)]
     splits['effective_date'] = pd.to_datetime(splits['effective_date'])
     splits['sid'] = [meta_dict.get(sym, -1) for sym in splits['symbol'].tolist()]
