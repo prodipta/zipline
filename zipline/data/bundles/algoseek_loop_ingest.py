@@ -10,6 +10,12 @@ import os
 import datetime
 import requests
 import json
+import shutil
+
+# TODO: This is a hack, install the correct version
+#zp_path = "C:/Users/academy.academy-72/Documents/python/zipline/"
+#sys.path.insert(0, zp_path)
+# TODO: End of hack part
 
 from zipline.data.bundles import register
 from zipline.data.bundles.algoseek import algoseek_minutedata
@@ -36,6 +42,8 @@ class IngestLoop:
             self.sym_directory=config["SYM_DIRECTORY"]
             self.wiki_url=config["WIKI_URL"]
             self.spx_data = download_spx_changes(self.wiki_url)
+            self.known_missing_syms = pd.read_csv(os.path.join(self.meta_path,'missing_syms.csv'))
+            self.known_missing_syms.date = pd.to_datetime(self.known_missing_syms.date)
 
     def update_benchmark(self):
         if not os.path.isfile(os.path.join(self.meta_path, self.benchmark_file)):
@@ -104,6 +112,10 @@ class IngestLoop:
         print("extra symbols {}".format(extra_syms))
         missing_syms = [s for s in symlist if s not in symbols]
         print("missing symbols {}".format(missing_syms))
+        
+        date = pd.to_datetime(date)
+        known_missing_symbols = self.known_missing_syms[self.known_missing_syms.date==date]
+        known_missing_symbols = known_missing_symbols.symbol[known_missing_symbols.keep==1].tolist()
 
         if missing_syms and len(missing_syms) - len(extra_syms) > 1:
             spx_tickers = self.spx_data['tickers']
@@ -114,6 +126,9 @@ class IngestLoop:
             #print(dict(zip(missing_syms,validated_syms)))
             print("validattion {}".format(validated_syms))
             for i, s in enumerate(missing_syms):
+                if os.getenv('FROM_START') == 'True' and s in known_missing_symbols:
+                    touch(s+".csv",self.data_path)
+                    continue
                 if validated_syms[i]:
                     touch(s+".csv",self.data_path)
                     symbols.append(s)
@@ -134,6 +149,11 @@ class IngestLoop:
         delta = end_date - start_date
         dts = [(start_date + datetime.timedelta(days=x)).strftime('%Y%m%d') for x in range(0, delta.days+1)]
         all_files = os.listdir(self.input_path)
+        
+        if os.getenv('FROM_START') == 'True':
+            symbols_to_exclude = set(self.known_missing_syms.symbol[self.known_missing_syms.keep==0].tolist())
+        else:
+            symbols_to_exclude = set([])
 
         for dt in dts:
             files = [fname for fname in all_files if dt in fname]
@@ -146,6 +166,13 @@ class IngestLoop:
                 for f in files:
                     full_fname = os.path.join(self.input_path, f)
                     unzip_to_directory(full_fname, self.data_path)
+                    
+                    for f in symbols_to_exclude:
+                        try:
+                            shutil.os.remove(os.path.join(self.data_path,f+".csv"))
+                        except:
+                            pass
+                        
                     sfiles = os.listdir(self.data_path)
                     symbols = [s.split('.csv')[0] for s in sfiles if s.endswith('.csv')]
                     self.manage_symlist(symbols, dt)
