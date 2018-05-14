@@ -83,7 +83,7 @@ class CSVDIRBundleXNSE:
             self.cal_session_start=config["SESSION_START"]
             self.cal_session_end=config["SESSION_END"]
             self.cal_minutes_per_day=config["MINUTES_PER_DAY"]
-        
+
     def __init__(self, configpath=None):
         self._read_config(configpath)
         self.bizdays = self._read_bizdays(join(self.meta_path,self.bizdays_file))
@@ -99,10 +99,10 @@ class CSVDIRBundleXNSE:
         self.adjustment_db_path = join(self.bundle_path,self.adjustment_db_name)
         self.meta_data = self._read_asset_db()
         self.syms = self._read_allowed_syms()
-    
-    def _read_allowed_syms(self):        
+
+    def _read_allowed_syms(self):
         return self.meta_data['symbol'].tolist()
-    
+
     def _read_bizdays(self, strpathmeta):
         dts = []
         if not isfile(strpathmeta):
@@ -112,7 +112,7 @@ class CSVDIRBundleXNSE:
             #dts = dts['dates'].tolist()
             dts = pd.to_datetime(dts['dates']).tolist()
         return sorted(set(dts))
-    
+
     def _create_calendar(self, cal_name,tz,session_start,session_end,dts):
         cal = ExchangeCalendarFromDate(cal_name,tz,session_start,session_end,dts)
         try:
@@ -121,11 +121,11 @@ class CSVDIRBundleXNSE:
         except:
             register_calendar(self.calendar_name, cal)
         return get_calendar(self.calendar_name)
-    
-    def _read_asset_db(self):        
+
+    def _read_asset_db(self):
         if not isfile(join(self.meta_path,self.symlist_file)):
             raise ValueError('symbols metadata list is missing')
-            
+
         meta_data = pd.read_csv(join(self.meta_path,self.symlist_file))
         meta_data.loc[len(meta_data)] = self.benchmar_symbol,self.benchmar_symbol,self.bizdays[0],self.bizdays[-1]
         meta_data['start_date'] = pd.to_datetime(meta_data['start_date'])
@@ -146,14 +146,14 @@ class CSVDIRBundleXNSE:
                cache,
                show_progress,
                output_dir):
-        
+
         self.calendar = self._create_calendar(
                 self.calendar_name,
                 self.calendar_tz,
                 self.cal_session_start,
                 self.cal_session_end,
                 self._read_bizdays(join(self.meta_path,self.bizdays_file)))
-        
+
         xnse_bundle(environ,
                       asset_db_writer,
                       minute_bar_writer,
@@ -204,7 +204,7 @@ def xnse_bundle(environ,
     """
     Build a zipline data bundle from the directory with csv files.
     """
-    
+
     if not csvdir:
         raise ValueError("input data directory missing")
 
@@ -222,7 +222,7 @@ def xnse_bundle(environ,
                                              start_session,
                                              end_session)
     asset_db_writer = AssetDBWriter(asset_db_path)
-    
+
     daily_bar_writer.write(_pricing_iter(csvdir, syms, meta_data, bizdays,
                 show_progress),show_progress=show_progress)
 
@@ -238,31 +238,31 @@ def _write_meta_data(asset_db_writer,asset_db_path,meta_data):
         pass
 
     asset_db_writer.write(equities=meta_data)
-    
+
 def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
                            cal_sessions,bizdays, meta_path):
     try:
         os.remove(adjustment_db_path)
     except:
         pass
-    
+
     adjustment_writer = SQLiteAdjustmentWriter(adjustment_db_path,
                                                BcolzDailyBarReader(daily_bar_path),
                                                cal_sessions,
                                                overwrite=True)
-    
+
     meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
-    
+
     mergers = pd.read_csv(join(meta_path,"mergers.csv"),parse_dates=[0])
     mergers['effective_date'] = pd.to_datetime(mergers['effective_date'])
     mergers['sid'] = [meta_dict[sym] for sym in mergers['symbol'].tolist()]
     mergers =mergers.drop(['symbol'],axis=1)
-    
+
     splits = pd.read_csv(join(meta_path,"splits.csv"),parse_dates=[0])
     splits['effective_date'] = pd.to_datetime(splits['effective_date'])
     splits['sid'] = [meta_dict[sym] for sym in splits['symbol'].tolist()]
     splits =splits.drop(['symbol'],axis=1)
-    
+
     dividends = pd.read_csv(join(meta_path,"dividends.csv"),parse_dates=[0])
     dividends['ex_date'] = pd.to_datetime(dividends['ex_date'])
     dividends['declared_date'] = pd.to_datetime(dividends['declared_date'])
@@ -270,7 +270,7 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     dividends['record_date'] = pd.to_datetime(dividends['record_date'])
     dividends['sid'] = [meta_dict[sym] for sym in dividends['symbol'].tolist()]
     dividends =dividends.drop(['symbol'],axis=1)
-    
+
     adjustment_writer.write(splits=splits,
                             mergers=mergers,
                             dividends=dividends)
@@ -288,7 +288,7 @@ def _pricing_iter(csvdir, symbols, meta_data, bizdays, show_progress):
                 fname = [fname for fname in files
                          if '%s.csv' % symbol in fname][0]
             except IndexError:
-                raise ValueError("%s.csv file is not in %s" % (symbol, csvdir))
+                print "%s.csv file is not in %s" % (symbol, csvdir)
 
             dfr = read_csv(os.path.join(csvdir, fname),
                            parse_dates=[0],
