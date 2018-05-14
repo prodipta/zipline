@@ -370,6 +370,7 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
                 print("{} moves out?".format(s))
                 dfr = make_dummy_df(s,idx,save_daily_path)
         except pd.io.common.EmptyDataError:
+            print("carrying over last day prices for {}".format(s))
             dfr = make_dummy_df(s,idx,save_daily_path)
 
         if len(dfr) == 0:
