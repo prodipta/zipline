@@ -44,7 +44,7 @@ def split_csvs(dfr, strpath):
     for s in syms:
         dfs = dfr.loc[dfr['Ticker']==s]
         dfs.to_csv(os.path.join(strpath,s+".csv"), index=False)
-        
+
 def get_latest_symlist(date):
     symbols = []
     syms = []
@@ -56,7 +56,7 @@ def get_latest_symlist(date):
     try:
         r = requests.get(url, stream=True)
         zipdata = StringIO()
-        for chunk in r.iter_content(chunk_size=1024): 
+        for chunk in r.iter_content(chunk_size=1024):
             if chunk:
                 zipdata.write(chunk)
         myzipfile = zipfile.ZipFile(zipdata)
@@ -65,7 +65,7 @@ def get_latest_symlist(date):
         syms = list(set(bhavcopy[bhavcopy.INSTRUMENT=='FUTSTK']['SYMBOL'].tolist()))
     except:
         pass
-    
+
     if syms:
         futsyms = [s+"-I" for s in syms]
         idxsyms = ['NIFTY50','NIFTYBANK','INDIAVIX','NIFTY-I','NIFTY-II','BANKNIFTY-I', 'BANKNIFTY-II']
@@ -75,11 +75,11 @@ def get_latest_symlist(date):
         underlyings = ['IDX']*7 + ['STK']*len(syms) + ['STK']*len(futsyms)
         symbols = {'symbol':all_syms,'name':names,'type':types,'underlying':underlyings}
         symbols = pd.DataFrame.from_dict(symbols)
-    
+
     return symbols
 
 class IngestLoop:
-    
+
     def __init__(self, configpath):
         with open(configpath) as configfile:
             config = json.load(configfile)
@@ -103,14 +103,14 @@ class IngestLoop:
         else:
             syms = pd.read_csv(strpathmeta)['symbol'].tolist()
         return syms
-    
+
     def make_latest_sym_list(self,date):
         destfile = os.path.join(self.meta_path,self.symlist_file)
         try:
             os.remove(destfile)
         except:
             pass
-        
+
         dts = [dt.split(".csv")[0] for dt in os.listdir(os.path.join(self.meta_path,self.sym_directory))]
         dts = pd.to_datetime(sorted(dts))
         ndts = [d.value/1E9 for d in dts]
@@ -128,7 +128,7 @@ class IngestLoop:
                 symfile = pd.to_datetime(date,format='%d%m%Y').date().strftime('%Y%m%d')+".csv"
                 symbols.to_csv(destfile, index=False)
                 symbols.to_csv(os.path.join(self.meta_path,self.sym_directory,symfile), index=False)
-    
+
     def update_bizdays(self, strdate):
         strpathmeta = os.path.join(self.meta_path,self.bizdays_file)
         dts = []
@@ -138,22 +138,22 @@ class IngestLoop:
         dts = dts+ [pd.to_datetime(strdate,format='%d%m%Y')]
         bizdays = pd.DataFrame(sorted(set(dts)),columns=['dates'])
         bizdays.to_csv(strpathmeta,index=False)
-        
+
     def manage_symlist(self, symbols):
         symlist = self.symlist
         missing_syms = [s for s in symlist if s not in symbols]
         print("missing symbols {}".format(missing_syms))
         for s in missing_syms:
             touch(s+".csv",self.data_path)
-            
+
     def update_corporate_actions(self, strdate):
         pass
-        
+
     def register_bundle(self, start_date, end_date):
         register(self.bundle_name, gdfl_minutedata(self.config_path),calendar_name=self.calendar_name,
                  start_session=None,end_session=None,
                  create_writers=False)
-    
+
     def call_ingest(self, start_date, end_date):
         self.register_bundle(start_date, end_date)
         bundles_module.ingest(self.bundle_name,os.environ,pd.Timestamp.utcnow())
@@ -164,7 +164,7 @@ class IngestLoop:
         delta = end_date - start_date
         dts = [(start_date + datetime.timedelta(days=x)).strftime('%d%m%Y') for x in range(0, delta.days+1)]
         all_files = os.listdir(self.input_path)
-    
+
         for dt in dts:
             files = [f for f in all_files if dt in f and f.endswith(".csv")]
             files = list(set(files))
@@ -188,7 +188,7 @@ class IngestLoop:
                     dfr['Ticker'] = dfr['Ticker'].apply(ticker_cleanup)
                     dfr = dfr[dfr.Ticker.isin(self.symlist)]
                     split_csvs(dfr,self.data_path)
-                    
+
                 sfiles = os.listdir(self.data_path)
                 symbols = [s.split('.csv')[0] for s in sfiles if s.endswith('.csv')]
                 self.manage_symlist(symbols)
@@ -201,11 +201,11 @@ def main():
     assert len(sys.argv) == 4, (
             'Usage: python {} <start_date>'
             ' <end_date> <path_to_config>'.format(os.path.basename(__file__)))
-        
+
     start_date = pd.Timestamp(sys.argv[1],tz='Etc/UTC')
     end_date = pd.Timestamp(sys.argv[2],tz='Etc/UTC')
     config_file = sys.argv[3]
-    
+
     ingest_looper = IngestLoop(config_file)
     ingest_looper.run(start_date, end_date)
 

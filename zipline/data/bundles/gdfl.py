@@ -108,15 +108,15 @@ class CSVDIRBundleGDFL:
         #self.benchmark_data = self._read_benchmark_data(join(self.meta_path,self.benchmark_file))
         self.meta_data = self._read_asset_db()
         self.syms = self._read_allowed_syms(join(self.meta_path,self.symlist_file))
-    
+
     def _read_allowed_syms(self, strpathmeta):
         if not isfile(strpathmeta):
             raise ValueError('Allow syms list missing')
         else:
             syms = read_csv(strpathmeta)
-        
+
         return syms
-    
+
     def _read_bizdays(self, strpathmeta):
         if not isfile(strpathmeta):
             raise ValueError('Business days list missing')
@@ -124,7 +124,7 @@ class CSVDIRBundleGDFL:
             dts = read_csv(strpathmeta)
             dts = pd.to_datetime(dts['dates']).tolist()
         return sorted(set(dts))
-    
+
     def _create_calendar(self, cal_name,tz,session_start,session_end,dts):
         cal = ExchangeCalendarFromDate(cal_name,tz,session_start,session_end,dts)
         try:
@@ -133,18 +133,18 @@ class CSVDIRBundleGDFL:
         except:
             register_calendar(self.calendar_name, cal)
         return get_calendar(self.calendar_name)
-        
-    
+
+
     def _read_asset_db(self):
         meta_data = pd.DataFrame(columns=['symbol','asset_name','start_date',
                                           'end_date','auto_close_date',
                                           'exchange'])
-        
+
         query = ("SELECT equity_symbol_mappings.symbol, equities.asset_name, "
                  "equities.start_date, equities.end_date, equities.auto_close_date, "
                  "equities.exchange from equities INNER JOIN equity_symbol_mappings "
                  "ON equities.sid = equity_symbol_mappings.sid")
-        
+
         engine = sa.create_engine('sqlite:///' + self.asset_db_path)
         conn = engine.connect()
         table_exists = all(engine.dialect.has_table(conn,t) for t in asset_db_table_names)
@@ -171,7 +171,7 @@ class CSVDIRBundleGDFL:
                 self.cal_session_start,
                 self.cal_session_end,
                 self._read_bizdays(join(self.meta_path,self.bizdays_file)))
-        
+
         gdfl_bundle(environ,
                       asset_db_writer,
                       minute_bar_writer,
@@ -229,7 +229,7 @@ def gdfl_bundle(environ,
 
     if not os.path.isdir(csvdir):
         raise ValueError("%s is not a directory" % csvdir)
-    
+
     if meta_data is None:
         raise ValueError("meta data is missing")
 
@@ -245,16 +245,16 @@ def gdfl_bundle(environ,
                                              end_session)
     asset_db_writer = AssetDBWriter(asset_db_path)
 
-    
+
     try:
         minute_bar_writer.write(_minute_data_iter(csvdir, meta_data,calendar, syms, bizdays,"NSE",save_daily_path),
                  show_progress=show_progress)
     except BcolzMinuteOverlappingData:
         pass
-    
+
     daily_bar_writer.write(_pricing_iter(save_daily_path, meta_data['symbol'].tolist(),
                                          show_progress),show_progress=show_progress)
-        
+
     _write_meta_data(asset_db_writer,asset_db_path, meta_data)
     _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
                            calendar.all_sessions,bizdays, meta_path)
@@ -274,16 +274,16 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
         os.remove(adjustment_db_path)
     except:
         pass
-    
+
     adjustment_writer = SQLiteAdjustmentWriter(adjustment_db_path,
                                                BcolzDailyBarReader(daily_bar_path),
                                                cal_sessions,
                                                overwrite=True)
-    
+
     first_available_day = bizdays[0]
     last_available_day = bizdays[-1]
     meta_dict = dict(zip(meta_data['symbol'].tolist(),range(len(meta_data))))
-    
+
     mergers = pd.read_csv(join(meta_path,"mergers.csv"),parse_dates=True)
     mergers_fno = mergers.copy()
     mergers_fno.symbol = mergers.symbol+'-I'
@@ -295,7 +295,7 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     mergers = mergers[mergers['effective_date'] <= last_available_day]
     mergers =mergers.drop(['symbol'],axis=1)
     mergers = mergers[mergers['sid'] != -1]
-    
+
     splits = pd.read_csv(join(meta_path,"splits.csv"),parse_dates=True)
     splits_fno = splits.copy()
     splits_fno.symbol = splits_fno.symbol+'-I'
@@ -307,7 +307,7 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     splits = splits[splits['effective_date'] <= last_available_day]
     splits =splits.drop(['symbol'],axis=1)
     splits = splits[splits['sid'] != -1]
-    
+
     dividends = pd.read_csv(join(meta_path,"dividends.csv"),parse_dates=True)
     dividends = dividends[dividends.symbol.isin(syms.symbol)]
     dividends['ex_date'] = pd.to_datetime(dividends['ex_date'])
@@ -319,7 +319,7 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     dividends = dividends[dividends['ex_date'] <= last_available_day]
     dividends =dividends.drop(['symbol'],axis=1)
     dividends = dividends[dividends['sid'] != -1]
-    
+
     adjustment_writer.write(splits=splits,
                             mergers=mergers,
                             dividends=dividends)
@@ -353,13 +353,13 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
     current_session = bizdays[-1]
     idx = calendar.minutes_for_sessions_in_range(current_session,current_session)
     names_dict = dict(zip(syms['symbol'],syms['name']))
-    
+
     try:
         meta_dict = meta_data['symbol'].to_dict()
         meta_dict = {s:i for i,s in meta_dict.iteritems()}
     except:
         meta_dict = {}
-    
+
     for s in symbols:
         try:
             dfr = pd.read_csv(os.path.join(data_path, s+".csv"),converters={ 'Date': dateparse })
@@ -369,15 +369,14 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
             if(len(dfr)==0):
                 print("{} moves out?".format(s))
                 dfr = make_dummy_df(s,idx,save_daily_path)
-                
         except pd.io.common.EmptyDataError:
             print("carrying over last day prices for {}".format(s))
             dfr = make_dummy_df(s,idx,save_daily_path)
-            
+
         if len(dfr) == 0:
             print('failed to carry over last data for {}'.format(s))
             continue
-        
+
 #        s = ticker_cleanup(s)
 #        if not check_sym(s,syms):
 #            continue
@@ -391,11 +390,11 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
                 meta_data.loc[sid,"auto_close_date"] = (current_session + Timedelta(days=1)).value
         else:
             sid = len(meta_data)
-            meta_data.loc[sid] = s, names_dict.get(s,s), current_session.value,current_session.value,(current_session + Timedelta(days=1)).value, exchange  
-        
+            meta_data.loc[sid] = s, names_dict.get(s,s), current_session.value,current_session.value,(current_session + Timedelta(days=1)).value, exchange
+
         save_as_daily(join(save_daily_path,s+".csv"),dfr)
         yield sid, dfr
-    
+
 
 def ticker_cleanup(s):
     return s
@@ -411,7 +410,7 @@ def fixup_minute_df(data, calendar):
     dropcols = [ticker_col,dt_col,time_col,oi_col]
     data = data.drop(data.columns[dropcols],axis=1)
     data = data.rename(columns={
-            'Open': 'open', 
+            'Open': 'open',
             'High': 'high',
             'Low': 'low',
             'Close': 'close',
@@ -435,9 +434,9 @@ def check_sym(s,syms):
 
 
 def save_as_daily(strpath,df):
-    df = df.resample('1D').agg({'open': 'first', 
-               'high': 'max', 
-               'low': 'min', 
+    df = df.resample('1D').agg({'open': 'first',
+               'high': 'max',
+               'low': 'min',
                'close': 'last',
                'volume':'sum'})
     df = df[['open','high','low','close','volume']]
@@ -447,9 +446,9 @@ def save_as_daily(strpath,df):
         ddf = read_csv(strpath, index_col=0, parse_dates = True).sort_index()
         ddf = ddf.append(df)
         ddf = ddf[~ddf.index.duplicated(keep='last')]
-    
+
     ddf.to_csv(strpath)
-    
+
 def make_dummy_df(sym, idx, datapath):
     fname = sym+".csv"
     if not os.path.isfile(os.path.join(datapath,fname)):
