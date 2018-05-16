@@ -16,6 +16,11 @@ import requests
 from StringIO import StringIO
 import nsepy
 
+# TODO: This is a hack, install the correct version
+zp_path = "C:/Users/academy.academy-72/Documents/python/zipline/"
+sys.path.insert(0, zp_path)
+# TODO: End of hack part
+
 from zipline.data import bundles as bundles_module
 from zipline.data.bundles import register
 from zipline.data.bundles.XNSE import xnse_equities
@@ -351,7 +356,7 @@ class IngestLoop:
     def register_bundle(self):
         dts = (self.get_bizdays()).tz_localize(self.calendar_tz)
         register(self.bundle_name, xnse_equities(self.config_path),calendar_name=self.calendar_name,
-                 start_session=dts[0],end_session=dts[-1],
+                 start_session=None,end_session=None,
                  create_writers=False)
 
     def call_ingest(self):
@@ -380,6 +385,7 @@ def main():
             'Usage: python {} <date>'
             ' <path_to_config> <code download flag>'.format(os.path.basename(__file__)))
 
+    print(sys.argv[1])
     dt = pd.Timestamp(sys.argv[1],tz='Etc/UTC')
     config_file = sys.argv[2]
     update_codes = sys.argv[3]

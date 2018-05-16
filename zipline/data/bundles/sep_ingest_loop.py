@@ -295,7 +295,7 @@ class IngestLoop:
     def register_bundle(self):
         dts = (self.get_bizdays()).tz_localize(self.calendar_tz)
         register(self.bundle_name, sep_equities(self.config_path),calendar_name=self.calendar_name,
-                 start_session=dts[0],end_session=dts[-1],
+                 start_session=None,end_session=None,
                  create_writers=False)
 
     def call_ingest(self):

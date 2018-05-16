@@ -229,7 +229,8 @@ def sep_bundle(environ,
                 show_progress),show_progress=show_progress)
 
     meta_data = meta_data.dropna()
-    meta_data = meta_data.reset_index()
+    meta_data = meta_data.reset_index(drop=True)
+    
     _write_meta_data(asset_db_writer,asset_db_path,meta_data)
     _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
                            calendar.all_sessions, bizdays, meta_path)
@@ -280,8 +281,9 @@ def _pricing_iter(csvdir, symbols, meta_data, bizdays, show_progress):
     with maybe_show_progress(symbols, show_progress,
                              label='Loading custom pricing data: ') as it:
         files = os.listdir(csvdir)
-        for sid, symbol in enumerate(it):
-            logger.debug('%s: sid %s' % (symbol, sid))
+        sid = -1
+        for sid_count, symbol in enumerate(it):
+            logger.debug('%s: sid %s' % (symbol, sid_count))
 
             try:
                 fname = [fname for fname in files
@@ -296,7 +298,7 @@ def _pricing_iter(csvdir, symbols, meta_data, bizdays, show_progress):
             
             if len(dfr) == 0:
                 print('removing {} as we have no data rows'.format(symbol))
-                meta_data.symbol[meta_data.symbol==symbol] = np.nan
+                meta_data.loc[meta_data.symbol==symbol,'symbol'] = np.nan
                 continue
             
             dfr = get_ohlcv(dfr)
@@ -305,9 +307,10 @@ def _pricing_iter(csvdir, symbols, meta_data, bizdays, show_progress):
             dfr = ensure_all_days(dfr,start_date,end_date, bizdays)
             if len(dfr) == 0:
                 print('removing {} as we have no data rows'.format(symbol))
-                meta_data.symbol[meta_data.symbol==symbol] = np.nan
+                meta_data.loc[meta_data.symbol==symbol,'symbol'] = np.nan
                 continue
-
+            
+            sid = sid  + 1
             yield sid, dfr
 
 def ensure_all_days(dfr, start_date, end_date, bizdays):
