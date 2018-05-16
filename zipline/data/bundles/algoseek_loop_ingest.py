@@ -128,6 +128,7 @@ class IngestLoop:
             for i, s in enumerate(missing_syms):
                 if os.getenv('FROM_START') == 'True' and s in known_missing_symbols:
                     touch(s+".csv",self.data_path)
+                    symbols.append(s)
                     continue
                 if validated_syms[i]:
                     touch(s+".csv",self.data_path)

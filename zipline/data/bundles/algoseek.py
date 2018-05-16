@@ -119,6 +119,7 @@ class CSVDIRBundleALGOSEEK:
         if not isfile(strpath):
             raise ValueError('Benchmark data missing')
         df = pd.read_csv(strpath,parse_dates=[0],index_col=0).sort_index()
+        df = df[~df.index.duplicated(keep='last')]
         return df
 
     def _read_allowed_syms(self, strpathmeta):
@@ -272,7 +273,7 @@ def algoseek_bundle(environ,
         pass
 
     #write the benchmark data to save_daily_path to ingest
-    daily_benchmark = benchmark_data.loc[bizdays]
+    daily_benchmark = get_equal_sized_df(benchmark_data,bizdays)
     assert len(daily_benchmark) == len(bizdays), (
             'Benchmark data does not match with expected number. '
             'Got {} rows, expected {}'.format(len(daily_benchmark),

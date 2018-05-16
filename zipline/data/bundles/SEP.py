@@ -5,6 +5,7 @@ import os
 import sys
 from os.path import isfile, join
 import pandas as pd
+import numpy as np
 import json
 
 from logbook import Logger, StreamHandler
@@ -227,7 +228,8 @@ def sep_bundle(environ,
     daily_bar_writer.write(_pricing_iter(csvdir, syms, meta_data, bizdays,
                 show_progress),show_progress=show_progress)
 
-
+    meta_data = meta_data.dropna()
+    meta_data = meta_data.reset_index()
     _write_meta_data(asset_db_writer,asset_db_path,meta_data)
     _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
                            calendar.all_sessions, bizdays, meta_path)
@@ -256,16 +258,18 @@ def _write_adjustment_data(adjustment_db_path,meta_data,syms,daily_bar_path,
     
     splits = pd.read_csv(join(meta_path,"splits.csv"),parse_dates=[0])
     splits['effective_date'] = pd.to_datetime(splits['effective_date'])
-    splits['sid'] = [meta_dict[sym] for sym in splits['symbol'].tolist()]
+    splits['sid'] = [meta_dict.get(sym,-1) for sym in splits['symbol'].tolist()]
     splits =splits.drop(['symbol'],axis=1)
+    splits = splits[splits['sid'] != -1]
     
     dividends = pd.read_csv(join(meta_path,"dividends.csv"),parse_dates=[0])
     dividends['ex_date'] = pd.to_datetime(dividends['ex_date'])
     dividends['declared_date'] = pd.to_datetime(dividends['declared_date'])
     dividends['pay_date'] = pd.to_datetime(dividends['pay_date'])
     dividends['record_date'] = pd.to_datetime(dividends['record_date'])
-    dividends['sid'] = [meta_dict[sym] for sym in dividends['symbol'].tolist()]
+    dividends['sid'] = [meta_dict.get(sym,-1) for sym in dividends['symbol'].tolist()]
     dividends =dividends.drop(['symbol'],axis=1)
+    dividends = dividends[dividends['sid'] != -1]
     
     adjustment_writer.write(splits=splits,
                             dividends=dividends)
@@ -291,6 +295,8 @@ def _pricing_iter(csvdir, symbols, meta_data, bizdays, show_progress):
                            index_col=0).sort_index()
             
             if len(dfr) == 0:
+                print('removing {} as we have no data rows'.format(symbol))
+                meta_data.symbol[meta_data.symbol==symbol] = np.nan
                 continue
             
             dfr = get_ohlcv(dfr)
@@ -298,6 +304,8 @@ def _pricing_iter(csvdir, symbols, meta_data, bizdays, show_progress):
             end_date = pd.to_datetime(meta_data.loc[meta_data.symbol==symbol,'end_date'])
             dfr = ensure_all_days(dfr,start_date,end_date, bizdays)
             if len(dfr) == 0:
+                print('removing {} as we have no data rows'.format(symbol))
+                meta_data.symbol[meta_data.symbol==symbol] = np.nan
                 continue
 
             yield sid, dfr

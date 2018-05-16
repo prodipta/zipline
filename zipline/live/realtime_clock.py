@@ -17,11 +17,12 @@ class ClockEvents(Enum):
     MINUTE_END = 3
     BEFORE_TRADING_START_BAR = 4
     HEART_BEAT = 5
+    END_CLOCK = 6
 
 class RealTimeClock:
     def __init__(self,*args, **kwargs):
         self.lifetime = kwargs.pop('lifetime', 200)
-        self.heartbeat = kwargs.pop('heartbeat', 60)
+        self.heartbeat = kwargs.pop('heartbeat', 5)
         self.timezone = kwargs.pop('timezone', 'Etc/UTC')
         self.market_open_time = kwargs.pop('market_open',datetime.time(9,15,0))
         self.market_close_time = kwargs.pop('market_open',datetime.time(15,30,0))
@@ -81,10 +82,13 @@ class RealTimeClock:
     def pause_clock(self):
         self.kill = True
         
+    def close(self):
+        self.reset_clock()
+        raise GeneratorExit
     
     def __iter__(self):
-        while not self.kill:
-            try:
+        try:
+            while not self.kill:
                 self.get_time_now()
                 loop_start_time = time.time()
             
@@ -110,7 +114,28 @@ class RealTimeClock:
                 time_left = round(self.heartbeat  - (loop_end_time - loop_start_time))
                 if time_left > 0:
                     time.sleep(time_left)
-            except:
-                break
+        except GeneratorExit:
+            self.reset_clock()
+            return
+        finally:
+            self.reset_clock()
+            return
             
-        self.kill = False
+        #yield self.timestamp, ClockEvents.END_CLOCK
+        self.reset_clock()
+        return
+
+#realtime_clock = RealTimeClock(timezone='Asia/Calcutta')
+#i = 0
+#for t,e in realtime_clock:
+#    print('{}:{}'.format(t,e))
+#    i = i+1
+#    if i>6:
+#        print('we are done, exit the clock loop')
+#        #realtime_clock.kill = True
+#        break
+#        #realtime_clock.close()
+        
+        
+    
+
