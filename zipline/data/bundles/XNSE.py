@@ -327,7 +327,7 @@ def ensure_all_days(dfr, start_date, end_date, bizdays):
     idx = bizdays.intersection(dts)
     if len(idx) == len(dfr):
         return dfr
-    dfr = get_equal_sized_df(dfr,idx)
+    dfr = get_equal_sized_df(dfr,bizdays)
     return dfr
 
 def get_equal_sized_df(dfr, idx):

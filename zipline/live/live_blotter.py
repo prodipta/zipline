@@ -128,85 +128,33 @@ class LiveBlotter(Blotter):
     def cancel_all_orders_for_asset(self, asset, warn=False,
                                     relay_status=True):
         """
-        Cancel all open orders for a given asset.
+        For a live blotter with EOD cancel policy we never have to do this
         """
-        # (sadly) open_orders is a defaultdict, so this will always succeed.
-        orders = self.open_orders[asset]
-
-        # We're making a copy here because `cancel` mutates the list of open
-        # orders in place.  The right thing to do here would be to make
-        # self.open_orders no longer a defaultdict.  If we do that, then we
-        # should just remove the orders once here and be done with the matter.
-        for order in orders[:]:
-            self.cancel(order.id, relay_status)
-            if warn:
-                # Message appropriately depending on whether there's
-                # been a partial fill or not.
-                if order.filled > 0:
-                    warning_logger.warn(
-                        'Your order for {order_amt} shares of '
-                        '{order_sym} has been partially filled. '
-                        '{order_filled} shares were successfully '
-                        'purchased. {order_failed} shares were not '
-                        'filled by the end of day and '
-                        'were canceled.'.format(
-                            order_amt=order.amount,
-                            order_sym=order.asset.symbol,
-                            order_filled=order.filled,
-                            order_failed=order.amount - order.filled,
-                        )
-                    )
-                elif order.filled < 0:
-                    warning_logger.warn(
-                        'Your order for {order_amt} shares of '
-                        '{order_sym} has been partially filled. '
-                        '{order_filled} shares were successfully '
-                        'sold. {order_failed} shares were not '
-                        'filled by the end of day and '
-                        'were canceled.'.format(
-                            order_amt=order.amount,
-                            order_sym=order.asset.symbol,
-                            order_filled=-1 * order.filled,
-                            order_failed=-1 * (order.amount - order.filled),
-                        )
-                    )
-                else:
-                    warning_logger.warn(
-                        'Your order for {order_amt} shares of '
-                        '{order_sym} failed to fill by the end of day '
-                        'and was canceled.'.format(
-                            order_amt=order.amount,
-                            order_sym=order.asset.symbol,
-                        )
-                    )
-
-        assert not orders
-        del self.open_orders[asset]
+        raise ValueError('Unexpected cancel_all_orders_for_asset function call from blotter')
 
     def execute_cancel_policy(self, event):
-        if self.cancel_policy.should_cancel(event):
-            warn = self.cancel_policy.warn_on_cancel
-            for asset in copy(self.open_orders):
-                self.cancel_all_orders_for_asset(asset, warn,
-                                                 relay_status=False)
+        """
+        For a live blotter with EOD cancel policy we never have to do this
+        """
+        raise ValueError('Unexpected execute_cancel_policy function call from blotter')
 
     def reject(self, order_id, reason=''):
         """
         For a live blotter we never have to do this
         """
-        raise ValueError('Unexpected reject function call')
+        raise ValueError('Unexpected reject function call from blotter')
 
     def hold(self, order_id, reason=''):
         """
         For a live blotter we never have to do this
         """
-        raise ValueError('Unexpected hold function call')
+        raise ValueError('Unexpected hold function call from blotter')
 
     def process_splits(self, splits):
         """
         For a live blotter with EOD cancel policy we should never need this
         """
-        raise ValueError('Unexpected process_splits function call')
+        raise ValueError('Unexpected process_splits function call from blotter')
 
     def get_transactions(self, bar_data):
         """
