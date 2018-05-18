@@ -34,23 +34,60 @@ class OrdersError(Exception):
 class Broker(with_metaclass(ABCMeta, object)):
     @abstractproperty
     def name(self):
-        pass
+        raise NotImplementedError('name')
     
     @abstractproperty
     def region(self):
-        pass
+        raise NotImplementedError('region')
     
     @abstractproperty
     def accoundID(self):
-        pass
+        raise NotImplementedError('accountID')
     
     @abstractproperty
     def orders(self):
-        pass
+        """
+        Parameters
+        ----------
+        None. Retrieves all orders sent for the current session
+
+        Returns
+        -------
+        list
+            A list of orders in the given account ID along with status and
+            execution details, if any.
+        """
+        raise NotImplementedError('orders')
     
     @abstractproperty
     def transactions(self):
-        pass
+        """
+        Parameters
+        ----------
+        None. Retrieves all transactions executed for the current session
+
+        Returns
+        -------
+        list
+            A list of orders in the given account ID along with status and
+            execution details, if any.
+        """
+        raise NotImplementedError('transactions')
+    
+    @abstractproperty
+    def positions(self):
+        """
+        Parameters
+        ----------
+        None. Retrieves the current list of holdings and positions
+            across all available segments (cash, futures, FX) etc.
+
+        Returns
+        -------
+        list
+            A list of positions in the given account ID
+        """
+        raise NotImplementedError('positions')
 
     @abstractmethod
     def authenticate(self, *args, **kwargs):
@@ -66,37 +103,7 @@ class Broker(with_metaclass(ABCMeta, object)):
         Boolean
             True or false depending on the success
         """
-        pass
-    
-    @abstractmethod
-    def get_positions(self):
-        """
-        Parameters
-        ----------
-        None. Retrieves the current list of holdings and positions
-            across all available segments (cash, futures, FX) etc.
-
-        Returns
-        -------
-        list
-            A list of positions in the given account ID
-        """
-        pass
-    
-    @abstractmethod
-    def get_transactions(self):
-        """
-        Parameters
-        ----------
-        None. Retrieves all orders sent for the current day
-
-        Returns
-        -------
-        list
-            A list of orders in the given account ID along with status and
-            execution details, if any.
-        """
-        pass
+        raise NotImplementedError('authenticate')
     
     @abstractmethod
     def order(self, asset, amount, style):
@@ -112,7 +119,7 @@ class Broker(with_metaclass(ABCMeta, object)):
         string
             A uuid of the order as returned by the broker
         """
-        pass
+        raise NotImplementedError('order')
     
     @abstractmethod
     def cancel(self, order_id):
@@ -126,5 +133,5 @@ class Broker(with_metaclass(ABCMeta, object)):
         string
             A uuid of the order as returned by the broker
         """
-        pass
+        raise NotImplementedError('cancel')
 

@@ -164,7 +164,7 @@ class CSVDIRBundleALGOSEEK:
         if table_exists:
             meta_data = pd.read_sql_query(query, conn)
         else:
-            # make sure we do have the benchmark in asset table
+            # make sure we do have the benchmark in asset table at SID 0
             start_date = self.bizdays[0]
             end_date = self.bizdays[-1]
             ac_date = (end_date + Timedelta(days=1))
@@ -266,12 +266,6 @@ def algoseek_bundle(environ,
                                              calendar.all_sessions[-1])
     asset_db_writer = AssetDBWriter(asset_db_path)
 
-    try:
-        minute_bar_writer.write(_minute_data_iter(csvdir, meta_data,calendar, syms, bizdays,"NYSE",save_daily_path),
-                 show_progress=show_progress)
-    except BcolzMinuteOverlappingData:
-        pass
-
     #write the benchmark data to save_daily_path to ingest
     daily_benchmark = get_equal_sized_df(benchmark_data,bizdays)
     assert len(daily_benchmark) == len(bizdays), (
@@ -279,6 +273,17 @@ def algoseek_bundle(environ,
             'Got {} rows, expected {}'.format(len(daily_benchmark),
                  len(bizdays)))
     daily_benchmark.to_csv(join(save_daily_path,benchmark_symbol+".csv"))
+    todays_benchmark = daily_benchmark.tail(1)
+    
+    
+    try:
+        minute_bar_writer.write(_minute_data_iter(csvdir, meta_data,calendar, 
+                                                  syms, bizdays,"NYSE",
+                                                  save_daily_path,
+                                                  todays_benchmark),
+                 show_progress=show_progress)
+    except BcolzMinuteOverlappingData:
+        pass
 
     daily_bar_writer.write(_pricing_iter(save_daily_path, meta_data['symbol'].tolist(),
                                          show_progress),show_progress=show_progress)
@@ -371,7 +376,7 @@ def _pricing_iter(csvdir, symbols, show_progress):
             yield sid, dfr
 
 def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
-                      exchange,save_daily_path):
+                      exchange,save_daily_path, todays_benchmark):
     dateparse = lambda x: datetime.strptime(x, '%Y%m%d').strftime('%Y-%m-%d')
     files = listdir(data_path)
     symbols = [f.split('.csv')[0] for f in files if f.endswith('.csv')]
@@ -380,6 +385,12 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
     idx = calendar.minutes_for_sessions_in_range(current_session,current_session)
     names_dict = dict(zip(syms['Ticker'],syms['Name']))
     exchange_dict = dict(zip(syms['Ticker'],syms['Exchange']))
+    
+    # we know benchmark is always at SID = 0
+    # expand the data to whole minutes in the session and yield
+    todays_benchmark.index = pd.to_datetime([idx[0]])
+    dfr = get_equal_sized_df(todays_benchmark,idx)
+    yield 0, dfr
 
     try:
         meta_dict = meta_data['symbol'].to_dict()
@@ -404,11 +415,6 @@ def _minute_data_iter(data_path,meta_data,calendar, syms, bizdays,
         if len(dfr) == 0:
             print("Failed to carry over last day prices for {}".format(s))
             continue
-
-#        s = ticker_cleanup(s)
-#        if not check_sym(s,syms):
-#            print("skip {}, not in allowed list".format(s))
-#            continue
 
         if s in meta_dict:
             sid = meta_dict[s]

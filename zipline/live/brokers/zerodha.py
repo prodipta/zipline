@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import time
 import logging
+from sqlalchemy import create_engine
 
 from kiteconnect import KiteConnect
 
@@ -16,36 +17,41 @@ sys.path.insert(0, zp_path)
 from zipline.live.brokers.brokers import Broker, AuthenticationError, OrdersError
 from zipline.live.finance.order import LiveOrder
 
+from zipline.finance.commission import PerTrade
 from zipline.finance.order import ORDER_STATUS
 from zipline.finance.performance.position import Position
 from zipline.finance.transaction import Transaction
 from zipline.assets.assets import AssetFinder
-from sqlalchemy import create_engine
-
 
 
 logging.basicConfig(level=logging.DEBUG)
 
+ZERODHA_MINIMUM_COST_PER_EQUITY_TRADE = 0.0
+ZERODHA_MINIMUM_COST_PER_FUTURE_TRADE = 20.0
+
 class ZerodhaBroker(Broker):
     
-    def __init__(self, args, **kwargs):
+    def __init__(self, *args, **kwargs):
         self.api_key = kwargs.pop('api_key', None)
-        self.secret_key = kwargs.pop('secret_key', None)
+        self.api_secret = kwargs.pop('api_secret', None)
         self.request_token = kwargs.pop('request_token', None)
         self.access_token = kwargs.pop('access_token', None)
         self.account_id = kwargs.pop('account_id', None)
-        self.bundle_path = kwargs.pop('bundle', None)
+        
+        
         self.timezone = kwargs.pop('timezone', 'Etc/UTC')
-        self.commission = 20
+        self.commission = PerTrade(cost=ZERODHA_MINIMUM_COST_PER_FUTURE_TRADE)
         self.expiry = kwargs.pop('expiry', None)
         
         self.kite = KiteConnect(api_key=self.api_key)
-        self.authenticate(args, **kwargs)
+        self.authenticate(*args, **kwargs)
         
-        self.orderbook = []
-        self.positionbook = []
-        self.transactions = []
+        self._orderbook = []
+        self._open_orders = []
+        self._positionbook = []
+        self._transactions = []
         
+        self.bundle_path = kwargs.pop('bundle_path', None)
         asset_db_path = 'sqlite:///' + os.path.join(self.bundle_path,'assets-6.sqlite')
         engine = create_engine(asset_db_path)
         self.asset_finder = AssetFinder(engine)
@@ -53,6 +59,9 @@ class ZerodhaBroker(Broker):
         self.last_api_call_dt = pd.Timestamp.now()
         self.time_since_last_api_call = None
         self.call_rate_limit_in_seconds = 2
+        
+        self.orderbook_needs_update = True
+        self.positionbook_needs_update = True
             
     @property
     def name(self):
@@ -68,23 +77,29 @@ class ZerodhaBroker(Broker):
     
     @property
     def orders(self):
-        orders_list = self.kite.orders()
-        if not orders_list:
-            return None
-        
-        orders = []
-        for o in orders_list:
-            order = self.kite_dict_to_order(o)
-            orders.append(order)
+        if self.orderbook_needs_update:
+            self.update_orderbook()
             
-        return orders
-        
+        return self._orderbook
     
     @property
     def transactions(self):
-        pass
+        if self.orderbook_needs_update:
+            self.update_transactions()
+            
+        return self._transactions
+    
+    @property
+    def positions(self):
+        if self.orderbook_needs_update:
+            self.update_transactions()
+            
+        return self._positionbook
         
-    def force_time_out(self):
+    def api_time_out(self,n=0):
+        if n > 0:
+            time.sleep(n)
+        
         if self.time_since_last_api_call:
             return
         
@@ -111,7 +126,7 @@ class ZerodhaBroker(Broker):
         else:
             raise OrdersError('Illegal order status')
     
-    def kite_dict_to_order(self, order_dict):
+    def dict_to_order(self, order_dict):
         dt = pd.Timestamp(order_dict['order_timestamp']).to_datetime()
         #reason = order_dict['status_message']
         #created = pd.Timestamp(order_dict['order_timestamp']).to_datetime()
@@ -123,7 +138,7 @@ class ZerodhaBroker(Broker):
         
         amount = order_dict['quantity']*order_dict.get('multiplier',1)
         filled = order_dict['filled_quantity']*order_dict.get('multiplier',1)
-        commission = self.commission
+        commission = 0
         _status = self.order_status_map(order_dict['status'])
         stop = order_dict['trigger_price']
         limit = order_dict['price']
@@ -142,7 +157,7 @@ class ZerodhaBroker(Broker):
         
         return o
     
-    def kite_dict_to_position(self, position_dict):
+    def dict_to_position(self, position_dict):
         asset = self.symbol_to_asset(position_dict['tradingsymbol'])
         amount = position_dict['quantity']*position_dict['multiplier']
         cost_basis = position_dict['average_price']
@@ -165,36 +180,148 @@ class ZerodhaBroker(Broker):
         return txn
     
     def authenticate(self, *args, **kwargs):
-        """
-        Parameters
-        ----------
-        list of user ID/ password or access key, secret key etc.
-            Also potentially information to persist logged on credentials
-            if required
+        request_token = kwargs.pop('request_token', self.request_token)
+        access_token = kwargs.pop('access_token', self.access_token)
+        api_secret = kwargs.pop('api_secret', self.api_secret)
         
-        Returns
-        -------
-        Boolean
-            True on success, else raise exception. Side effect is to se
-        """
-        if self.access_token:
-            return
-        
-        if not self.access_token:
-            if self.request_token and self.secret_key:
+        if access_token:
+            self.kite.set_access_token(self.access_token)
+        elif not access_token:
+            if request_token and api_secret:
                 try:
-                    sess = self.kite.generate_session("request_token_here", secret="your_secret")
+                    sess = self.kite.generate_session(request_token, secret=api_secret)
                     self.kite.set_access_token(sess["access_token"])
                     self.access_token = sess["access_token"]
                 except:
-                    raise AuthenticationError("Failed to obtain access token")      
+                    raise AuthenticationError("Failed to obtain access token")
+        else:
+            raise AuthenticationError("access_token or credentials missing")
             
         if not self.access_token:
-            raise AuthenticationError("Failed to obtain access token")
+            raise AuthenticationError("Authentication error, no access token")
             
         return True
             
+    def order(self, asset, amount, style, tag):
+        is_buy = amount>0
+        
+        tradingsymbol = self.asset_to_symbol(asset)
+        exchange = self.asset_to_exchange(asset)
+        product = self.kite.PRODUCT_NRML
+        
+        if is_buy:
+            transaction_type = self.kite.TRANSACTION_TYPE_BUY
+        else:
+            transaction_type = self.kite.TRANSACTION_TYPE_SELL
+       
+        
+        limit = style.get_limit_price(is_buy)
+        stop = style.get_stop_price(is_buy)
+        
+        if limit is None and stop is None:
+            order_type = self.kite.ORDER_TYPE_MARKET
+        elif stop is None:
+            order_type = self.kite.ORDER_TYPE_LIMIT
+        elif stop is None:
+            order_type = self.kite.ORDER_TYPE_STOP
+        else:
+            raise OrdersError("stop limit orders are not supported at present")
+       
+        try:
+            self.api_time_out()
+            order_id = self.kite.place_order(variety = self.kite.VARIETY_REGULAR,
+                            exchange=exchange,
+                            tradingsymbol=tradingsymbol,
+                            transaction_type=transaction_type,
+                            quantity=abs(amount),
+                            product=product,
+                            order_type=order_type,
+                            price=limit, tag=tag)
+
+            self.orderbook_needs_update = True
+            self.positionbook_needs_update = True
+            logging.info("Order placed. ID is: {}".format(order_id))
+        except Exception as e:
+            self.handle_order_error()
+            logging.warning("Order placement failed: {}".format(e.message))
+            
+    def cancel(self, order_id):
+        try:
+            self.api_time_out()
+            order_id = self.kite.cancel_order(self, 
+                        self.kite.VARIETY_REGULAR, 
+                        order_id)
+            logging.info("Order ID {} cancel request placed".format(order_id))
+        except Exception as e:
+            self.handle_order_error(order_id)
+            logging.warning("Order cancellation failed: {}".format(e.message))
+            
+    def handle_order_error(self, *args):
+        pass
+    
+    def update_positionbook(self):        
+        self._positionbook = []
+        
+        self.api_time_out()
+        positions = self.kite.positions()['net']
+        
+        if positions:
+            for p in positions:
+                self._positionbook.append(self.dict_to_position(p))
+            
+        # TODO: test it!
+        self.api_time_out()
+        holdings = self.kite.holdings()
+        if not holdings:
+            return
+        for p in holdings:
+            self._positionbook.append(self.dict_to_position(p))
+            
+        if not self._open_orders:
+            self.positionbook_needs_update =False
+
+    def update_orderbook(self):
+        self._orderbook = []
+        self._open_orders = []
+        
+        self.api_time_out()
+        orders = self.kite.orders()
+        if not orders:
+            self.orderbook_needs_update = False
+            return
+        
+        for o in orders:
+            self._orderbook.append(self.dict_to_order(o))
+            if o.status == ORDER_STATUS.OPEN:
+                self._open_orders.append(o)
+        
+        if not self._open_orders:
+            self.orderbook_needs_update = False
+        
+    def update_transactions(self):
+        self._transactions = []
+        
+        if self.orderbook_needs_update:
+            self.update_orderbook()
+        
+        if not self._orderbook:
+            return
+        
+        for o in self._orderbook:
+            self._transactions.append(self.transaction_from_order(o))
+    
     def symbol_to_asset(self, tradingsymbol):
+        """
+        Parameters
+        ----------
+        tradingsymbol : trading symbol (string)
+
+        Returns
+        -------
+        asset
+            An object of type zipline Asset.
+        """
+        
         segment_ticker = tradingsymbol.split(':')
         if len(segment_ticker) == 1:
             symbol = segment_ticker[0]
@@ -219,6 +346,17 @@ class ZerodhaBroker(Broker):
         return asset
             
     def asset_to_symbol(self, asset, with_segment=False):
+        """
+        Parameters
+        ----------
+        asset : Zipline asset object
+
+        Returns
+        -------
+        tradingsymbol
+            A string with the instrument symbol
+        """
+        
         symbol = asset.symbol
         segment = 'NSE'
         
@@ -232,6 +370,17 @@ class ZerodhaBroker(Broker):
         return symbol
     
     def asset_to_exchange(self, asset):
+        """
+        Parameters
+        ----------
+        asset : Zipline asset object
+
+        Returns
+        -------
+        exchange
+            A string with the exchange or segment where the instrument is traded
+        """
+        
         symbol = asset.symbol
         segment = 'NSE'
         
@@ -239,91 +388,3 @@ class ZerodhaBroker(Broker):
             segment = 'NFO'
             
         return segment
-            
-    def order(self, asset, amount, style, tag):
-        is_buy = amount>0
-        
-        tradingsymbol = self.asset_to_symbol(asset)
-        exchange = self.asset_to_exchange(asset)
-        product = self.kite.PRODUCT_NRML
-        
-        if is_buy:
-            transaction_type = self.kite.TRANSACTION_TYPE_BUY
-        else:
-            transaction_type = self.kite.TRANSACTION_TYPE_SELL
-       
-        
-        limit = style.get_limit_price(is_buy)
-        stop = style.get_stop_price(is_buy)
-        
-        if limit is None and stop is None:
-            order_type = self.kite.ORDER_TYPE_MARKET
-        elif stop is None:
-            order_type = self.kite.ORDER_TYPE_LIMIT
-        else:
-            raise OrdersError("only market and limit orders are supported")
-       
-        try:
-            self.force_time_out()
-            order_id = self.kite.place_order(variety = self.kite.VARIETY_REGULAR,
-                            exchange=exchange,
-                            tradingsymbol=tradingsymbol,
-                            transaction_type=transaction_type,
-                            quantity=abs(amount),
-                            product=product,
-                            order_type=order_type,
-                            price=limit, tag=tag)
-
-            logging.info("Order placed. ID is: {}".format(order_id))
-        except Exception as e:
-            logging.info("Order placement failed: {}".format(e.message))
-            
-    def cancel(self, order_id):
-        try:
-            self.force_time_out()
-            order_id = self.kite.cancel_order(self, 
-                        self.kite.VARIETY_REGULAR, 
-                        order_id)
-            logging.info("Order ID {} cancel request placed".format(order_id))
-        except Exception as e:
-            logging.info("Order cancellation failed: {}".format(e.message))
-            
-    def get_positions(self):
-        self.force_time_out()
-        positions = self.kite.positions()['net']
-        if not positions:
-            return
-        
-        self.positionbook = []
-        for p in positions:
-            self.positionbook.append(self.kite_dict_to_position(p))
-            
-        # TODO: test it!
-        self.force_time_out()
-        holdings = self.kite.holdings()
-        if not holdings:
-            return
-        for p in holdings:
-            self.positionbook.append(self.kite_dict_to_position(p))
-            
-        
-    def get_orders(self):
-        self.force_time_out()
-        orders = self.kite.orders()
-        if not orders:
-            return
-        
-        self.orderbook = []
-        for o in orders:
-            self.orderbook.append(self.kite_dict_to_order(o))
-        
-    def get_transactions(self):
-        self.get_orders()
-        
-        if not self.orderbook:
-            return
-        
-        self.transactions = []
-        for o in self.orderbook:
-            self.transactions.append(self.transaction_from_order(o))
-    
