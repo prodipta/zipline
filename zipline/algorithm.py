@@ -1342,12 +1342,12 @@ class TradingAlgorithm(object):
 
         if normalized_date < asset.start_date:
             raise CannotOrderDelistedAsset(
-                msg="Cannot order {0}, as it started trading on"
+                msg="Cannot order {0}, as it entered benchmark on"
                     " {1}.".format(asset.symbol, asset.start_date)
             )
         elif normalized_date > asset.end_date:
             raise CannotOrderDelistedAsset(
-                msg="Cannot order {0}, as it stopped trading on"
+                msg="Cannot order {0}, as it was removed from benchmark on"
                     " {1}.".format(asset.symbol, asset.end_date)
             )
         else:
@@ -1391,7 +1391,7 @@ class TradingAlgorithm(object):
                 # If we are after the asset's end date or auto close date, warn
                 # the user that they can't place an order for this asset, and
                 # return None.
-                log.warn("Cannot place order for {0}, as it has de-listed. "
+                log.warn("Cannot place order for {0}, as it has moved out of benchmark. "
                          "Any existing positions for this asset will be "
                          "liquidated on "
                          "{1}.".format(asset.symbol, asset.auto_close_date))

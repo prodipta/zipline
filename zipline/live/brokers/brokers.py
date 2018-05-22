@@ -31,6 +31,12 @@ class OrdersError(Exception):
     """
     pass
 
+class InstrumentsError(Exception):
+    """
+    Raised when instruments list request fails
+    """
+    pass
+
 class Broker(with_metaclass(ABCMeta, object)):
     @abstractproperty
     def name(self):
@@ -58,6 +64,21 @@ class Broker(with_metaclass(ABCMeta, object)):
             execution details, if any.
         """
         raise NotImplementedError('orders')
+        
+    @abstractproperty
+    def open_orders(self):
+        """
+        Parameters
+        ----------
+        None. Retrieves all open orders for the current session
+
+        Returns
+        -------
+        list
+            A list of open orders in the given account ID along with status and
+            execution details, if any.
+        """
+        raise NotImplementedError('open_orders')
     
     @abstractproperty
     def transactions(self):
@@ -89,6 +110,21 @@ class Broker(with_metaclass(ABCMeta, object)):
         """
         raise NotImplementedError('positions')
 
+    @abstractmethod
+    def initialize(self, *args, **kwargs):
+        """
+        Parameters
+        ----------
+        list of arguments to initialize the live trading environment
+            from broker - like list of instruments, expiries etc.
+        
+        Returns
+        -------
+        Boolean
+            True or false depending on the success
+        """
+        raise NotImplementedError('initialize')
+    
     @abstractmethod
     def authenticate(self, *args, **kwargs):
         """

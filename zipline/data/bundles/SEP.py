@@ -301,7 +301,9 @@ def _pricing_iter(csvdir, symbols, meta_data, bizdays, show_progress):
                 meta_data.loc[meta_data.symbol==symbol,'symbol'] = np.nan
                 continue
             
-            dfr = get_ohlcv(dfr)
+            dfr['adj_ratio'] = dfr['close']/dfr['closeunadj']
+            dfr = pd.concat( [dfr[['open','high','low','close']].div(dfr['adj_ratio'],axis=0),dfr[['volume']]],axis=1)
+            #dfr = get_ohlcv(dfr)
             start_date = pd.to_datetime(meta_data.loc[meta_data.symbol==symbol,'start_date'])
             end_date = pd.to_datetime(meta_data.loc[meta_data.symbol==symbol,'end_date'])
             dfr = ensure_all_days(dfr,start_date,end_date, bizdays)
